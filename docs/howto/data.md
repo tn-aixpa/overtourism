@@ -16,7 +16,7 @@ func = project.new_function(
     name="process_data",
     kind="python",
     python_version="PYTHON3_12",
-    source="git+https://github.com/tn-aixpa/overtourism.git",
+    code_src="git+https://github.com/tn-aixpa/overtourism.git",
     handler="process_data:process_all_data",
     requirements=["civic-digital-twins==0.5.0", "digitalhub==0.14.0", "fastapi[standard]", "geojson>=3.2.0", "geopandas>=1.1.1", "matplotlib>=3.10.0", "orjson>=3.11.3", "plotly>=6.3.0", "pyarrow>19.0", "scikit-learn>=1.7.1", "scipy", "slugify>=0.0.1", "unidecode>=1.4.0", "networkx>=3.5", "contextily>=1.6.2", "matplotlib-scalebar>=0.9.0", "osmnx>=2.0.6", "polars", "haversine", "tqdm", "seaborn", "gtfs_kit"]
 )
