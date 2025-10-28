@@ -59,6 +59,8 @@ class LocalIOStore(Store):
         ProblemValues
             Loaded problem configuration
         """
+        if not problem_id.endswith(".yaml"):
+            problem_id = f"{problem_id}.yaml"
         path = self.folder / problem_id
         return load_problem(path)
 

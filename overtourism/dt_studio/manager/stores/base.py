@@ -24,7 +24,7 @@ class Store:
         pass
 
     @abstractmethod
-    def list_problem(self, *args, **kwargs) -> list[str]:
+    def list_problems(self, *args, **kwargs) -> list[str]:
         pass
 
     @abstractmethod
