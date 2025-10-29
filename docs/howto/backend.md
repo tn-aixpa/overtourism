@@ -5,7 +5,7 @@ Here follows a brief guide on how to set up and run the overtourism backend.
 ## Configuration
 
 Backend requires the datasets and artefacts to build a Digital Twin model on startup.
-The data may be either provided manually (standalone mode) or may be downloaded from the platform. 
+The data may be either provided manually (standalone mode) or may be downloaded from the platform.
 
 To enable standalone mode, run the application with the following configuration:
 
@@ -34,7 +34,7 @@ Run the FastAPI backend with:
 
 ```bash
 # You should already be inside the virtual environment and the right folder
-fastapi dev ./overtourism/backend/api/main.py
+fastapi run ./overtourism/backend/api/main.py
 ```
 
 ## With Docker
