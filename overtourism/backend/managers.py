@@ -26,6 +26,7 @@ from overtourism.dt_studio.viewer.viewer import ModelViewer
 
 logger = logging.getLogger(__name__)
 
+print("Initializing data...")
 
 if standalone_mode:
     logger.info("Standalone mode enabled")
@@ -34,10 +35,10 @@ else:
     p = dh.get_or_create_project(project_name)
     for d in dataitems:
         logger.info(f"Downloading dataitem: {d}")
-        p.get_dataitem(d).download(index_data_path)
+        p.get_dataitem(d).download(index_data_path, overwrite=True)
     for a in artifacts:
         logger.info(f"Downloading artifact: {a}")
-        p.get_artifact(a).download(index_data_path)
+        p.get_artifact(a).download(index_data_path, overwrite=True)
 
 
 # Load problem manager
