@@ -346,7 +346,7 @@ wheels = [
 
 [[package]]
 name = "digitalhub"
-version = "0.14.0"
+version = "0.14.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
@@ -360,9 +360,9 @@ dependencies = [
     { name = "requests" },
     { name = "sqlalchemy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/34/31/542850933203469467affd5df4a0e5ec333700e860086144269f042018d7/digitalhub-0.14.0.tar.gz", hash = "sha256:ac987cebf960b215fdf5405a8923f2c9eacef9dc37e658be9bce51542bb97952", size = 133050, upload-time = "2025-10-24T15:06:13.245Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/02/38/e2746337509fccbfe6b2a5ce3b42091ba62c40b6677f7eefa99b71020b23/digitalhub-0.14.4.tar.gz", hash = "sha256:5b3527fdf4b4af3aa40ba3c248f6df2f7f1a8ea3ab4b6639caf2e6c5117d01b4", size = 122796, upload-time = "2025-11-04T10:20:34.375Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9d/19/a067b03d5faf79abd6797833e3a12ecf445d7c781176d13e4fd0c872cc05/digitalhub-0.14.0-py3-none-any.whl", hash = "sha256:663d58b525f6781fa365c212cfd1894bee2da0978d58bef88eb74140157dbe4d", size = 254432, upload-time = "2025-10-24T15:06:11.809Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/2f/4564c7d480e00424c79f4b6c7166007d11c28a203a5f004f07785e29e461/digitalhub-0.14.4-py3-none-any.whl", hash = "sha256:27f63b07a70298fb5eebd846e769372b31824f7af4c438f4ad2b14c9460ead6d", size = 237496, upload-time = "2025-11-04T10:20:31.177Z" },
 ]
 
 [[package]]
@@ -1223,7 +1223,7 @@ dev = [
 requires-dist = [
     { name = "civic-digital-twins", specifier = "==0.5.0" },
     { name = "contextily", specifier = ">=1.6.2" },
-    { name = "digitalhub", specifier = "==0.14.0" },
+    { name = "digitalhub", specifier = "==0.14.4" },
     { name = "fastapi", extras = ["standard"] },
     { name = "geojson", specifier = ">=3.2.0" },
     { name = "geopandas", specifier = ">=1.1.1" },
