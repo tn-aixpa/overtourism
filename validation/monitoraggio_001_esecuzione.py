@@ -13,7 +13,7 @@ from overtourism.model.setup import problem_manager
 from pandas.core.interchange.dataframe_protocol import DataFrame
 import digitalhub as dh
 
-PROJECT = "overtourism1"
+PROJECT = "overtourism"
 
 def get_measured_presences():
     START_DATE = "2023-06-16"

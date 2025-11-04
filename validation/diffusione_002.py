@@ -6,7 +6,7 @@ import sklearn.metrics
 
 import digitalhub as dh
 
-PROJECT = "overtourism1"
+PROJECT = "overtourism"
 
 def main():
     correlazione = dh.get_dataitem("df_overturismo", project=PROJECT).as_df()
