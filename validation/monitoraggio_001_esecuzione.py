@@ -62,9 +62,9 @@ def get_measured_presences():
     return presences
 
 
-PROBLEM_NAME = "validation-problem"
+PROBLEM_NAME = "validation-monitoraggio-001-problem"
 PROBLEM_ID = slugify.slugify(PROBLEM_NAME)
-SCENARIO_NAME = "validation-scenario"
+SCENARIO_NAME = "validation-monitoraggio-001-scenario"
 SCENARIO_ID = slugify.slugify(SCENARIO_NAME)
 
 
