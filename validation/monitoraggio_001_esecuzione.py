@@ -69,7 +69,7 @@ SCENARIO_ID = slugify.slugify(SCENARIO_NAME)
 
 
 def main():
-    problem_manager.import_problem(PROBLEM_ID + ".yaml")  # TODO: remove suffix
+    problem_manager.import_problem(PROBLEM_ID)
     scenario_manager = problem_manager.get_problem(PROBLEM_ID)
 
     scenario_manager.evaluate_scenario(SCENARIO_ID)
