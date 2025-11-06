@@ -5,7 +5,7 @@ description = "Trentino overtourism analysis and modeling"
 requires-python = ">=3.11"
 dependencies = [
     "civic-digital-twins==0.5.0",
-    "digitalhub==0.14.0",
+    "digitalhub==0.14.4",
     "fastapi[standard]",
     "geojson>=3.2.0",
     "geopandas>=1.1.1",
@@ -30,6 +30,7 @@ dependencies = [
     "tqdm",
     "seaborn",
     "gtfs_kit",
+    "openpyxl>=3.1.5",
 ]
 license = "Apache-2.0"
 

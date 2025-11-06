@@ -10,10 +10,10 @@ import boto3
 import digitalhub as dh
 import os
 
-PROJECT = os.environ.get("PROJECT_NAME", "overtourism1")
+PROJECT = os.environ.get("PROJECT_NAME", "overtourism")
 BUCKET_NAME = os.environ.get("S3_BUCKET", "datalake")
 AWS_ENDPOINT_URL = os.environ.get("AWS_ENDPOINT_URL", "http://minio:9000")
-DATA_PREFIX = os.environ.get("DATA_PREFIX", "projects/tourism/_origin/")
+DATA_PREFIX = os.environ.get("DATA_PREFIX", "overtourism/inputdata/")
 BASE_DIR = os.environ.get("BASE_DIR", os.getcwd())
 CLI_ENV = os.environ.get("CLI_ENV", "aixpa")
 
