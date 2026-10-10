@@ -40,9 +40,10 @@ python -m model.fazzon.analyze_new_data         # exploratory analysis and plots
   * `fazzon_presence_stats`: the presence statistics of the Fazzon model, per season and weather
     class (good / cool / rainy), with the season weights and the weather climatology.
   * `fazzon_modal_shift` (`modal_shift.py`, step 2b): the behaviour model of the 2026 rules —
-    2026 year effect, car response to the price (β), and the split of the visitors who no longer
-    come by car (shuttle / walk-up / motorbike / elsewhere) under two occupancy assumptions, each
-    with a bootstrap 90 % interval; `fazzon_modal_shift_daily`: the 2026 days used.
+    2026 year effect, response of the visitors by private vehicle to the price (β; persons per
+    vehicle 2.5 at 5 euro to 3.5 at 20 euro), and the split of the visitors who no longer come
+    by private vehicle (shuttle / walk-up / elsewhere), each with a bootstrap 90 % interval;
+    `fazzon_modal_shift_daily`: the 2026 days used.
 
 The Fazzon model (`executor-backend/src/model/fazzon/`) reads the two statistics files from its
 data folder (`FAZZON_DATA_DIR`, e.g. `<repo>/data_preparation/Output/data/final_data/fazzon` for a

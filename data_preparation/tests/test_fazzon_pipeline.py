@@ -182,10 +182,18 @@ def test_modal_shift_recovers_known_response():
     daily = pd.DataFrame(rows).assign(year=2026, weather="good", event_day=False, moto_persons=0.0,
                                       parking_price_assumed=False)
     estimates, days = estimate_modal_shift(daily, stats)
-    e = estimates.set_index(["parameter", "occupancy", "days"])["estimate"]
-    assert e[("year_effect", "", "")] == pytest.approx(1.2)
-    # cars at 5 euro in 2026 = 1.2 x 2025 level, so the response is exp(-15 beta) / 1.2
-    assert e[("car_response", "", "")] == pytest.approx(np.exp(-beta * 15) / 1.2)
-    assert e[("price_paid", "", "")] == pytest.approx(20.0)
-    assert e[("share_walk_up", "constant", "with_walk_up")] > 0
+    e = estimates.set_index(["parameter", "days"])["estimate"]
+    assert e[("year_effect", "")] == pytest.approx(1.2)
+    # vehicles at 5 euro in 2026 = 1.2 x 2025 level, so the car response is exp(-15 beta) / 1.2
+    assert e[("car_response", "")] == pytest.approx(np.exp(-beta * 15) / 1.2)
+    assert e[("price_paid", "")] == pytest.approx(20.0)
+    # visitors: 3.5 persons per car at 20 euro vs 2.5 at 5 euro (A2)
+    assert e[("visitor_response", "")] == pytest.approx(np.exp(-beta * 15) / 1.2 * 3.5 / 2.5)
+    assert e[("share_walk_up", "with_walk_up")] > 0
     assert set(days["role"]) == {"regime", "year_effect"}
+
+
+def test_occupancy_interpolates_between_low_and_high_price():
+    from model.fazzon.modal_shift import occupancy
+
+    assert occupancy([0.0, 5.0, 10.0, 20.0, 40.0]).tolist() == pytest.approx([2.5, 2.5, 2.5 + 1 / 3, 3.5, 3.5])
