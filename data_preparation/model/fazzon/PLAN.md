@@ -79,10 +79,13 @@ Tasks:
 
 - [x] 3.1 What the model consumes: the pre-computed statistics (`fazzon_presence_season_stats`,
       `fazzon_presence_day_type_stats`); the calibration lives in pipeline step 2.
-- [~] 3.2 How `executor-backend` gets the data. Done: the model reads the parquet files from the
-      folder in `FAZZON_DATA_DIR`; unset, it uses the built-in 2025 values (no platform client in
-      `executor-backend`). **Open (with the backend owners):** how a deployment fills that folder
-      from the platform (e.g. an init step with `digitalhub`, as `download_index_data()`).
+- [x] 3.2 How `executor-backend` gets the data: as the indicator data of the CRUD API. At startup
+      (FastAPI lifespan) the dataitems are downloaded from the platform unless
+      `DT_OVERTURISM_STANDALONE_MODE=true`; on demand with `POST /models/fazzon/download-data`
+      (not authenticated, the wrapping layers add authentication). No built-in values: missing
+      data or a failed download raise. Data folder: `FAZZON_DATA_DIR` or
+      `executor-backend/database/fazzon`. The statistics are read when the model is built, and the
+      cached backend is dropped after a download.
 - [x] 3.3 Replace the hard-coded tables in `fazzon_presence_stats.py` with the loader; keep the
       same interface (`season_stats`, `day_type_stats`, `make_presence_factories`). The hard-coded
       tables stay as `DEFAULT_*` (fallback); their comments fixed (per-season SD, 28/08 left out).
@@ -115,6 +118,9 @@ Tasks:
 - [ ] 5.1 Send `OPEN_QUESTIONS.md` to the domain experts (when possible).
 - [ ] 5.2 Request 2026 road counts (PAT) and 2026 Vodafone presences.
 - [ ] 5.3 Fold the answers back into code and assumptions (see 4.3).
+- [ ] 5.4 Inform the backend developers of the Model API changes (3.2): the Model API needs the
+      Fazzon data to start, new endpoint `POST /models/{model_key}/download-data` to wrap with
+      admin authentication in the CRUD API, `digitalhub` dependency in `executor-backend`.
 
 ## Dependencies
 

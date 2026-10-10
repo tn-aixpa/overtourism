@@ -65,12 +65,7 @@ from civic_digital_twins.dt_model import (
 )
 from scipy import stats
 
-from .fazzon_presence_stats import (
-    car_visitors_stats,
-    day_type,
-    other_visitors_stats,
-    season,
-)
+from .fazzon_presence_stats import presence_inputs
 
 # ---------------------------------------------------------------------------
 # Constraint
@@ -397,7 +392,11 @@ class FazzonModel(Model):
 
         Override individual fields with :func:`dataclasses.replace` or supply
         a :class:`~dt_model.Scenario` at evaluation time.
+
+        The presence statistics are read from the Fazzon data folder at every call
+        (see :mod:`src.model.fazzon.fazzon_data`).
         """
+        season, day_type, car_visitors_stats, other_visitors_stats = presence_inputs()
         cv_season = CategoricalIndex("season", {s: season[s] for s in season})
         cv_day_type = CategoricalIndex("day_type", {d: day_type[d] for d in day_type})
 

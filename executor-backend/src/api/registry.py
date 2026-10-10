@@ -12,8 +12,11 @@ model.
 from __future__ import annotations
 
 import functools
+from collections.abc import Callable
+from pathlib import Path
 
 from src.model.fazzon.fazzon_backend import FazzonBackend
+from src.model.fazzon.fazzon_data import download_fazzon_data, ensure_fazzon_data
 from src.model.molveno.molveno_backend import MolvenoBackend
 
 BACKEND_REGISTRY: dict[str, type[FazzonBackend | MolvenoBackend]] = {
@@ -24,6 +27,15 @@ BACKEND_REGISTRY: dict[str, type[FazzonBackend | MolvenoBackend]] = {
 MODEL_TITLES: dict[str, str] = {
     "fazzon": "Fazzon (Lago dei Caprioli)",
     "molveno": "Molveno",
+}
+
+# Models whose data files come from the platform: startup check and on-demand download
+# (``overwrite=True``).  Both return the data folder and raise on failure.
+DATA_STARTUP: dict[str, Callable[[], Path]] = {
+    "fazzon": ensure_fazzon_data,
+}
+DATA_DOWNLOADERS: dict[str, Callable[..., Path]] = {
+    "fazzon": download_fazzon_data,
 }
 
 

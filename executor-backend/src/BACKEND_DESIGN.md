@@ -395,6 +395,12 @@ contract by convention (§Layer 3), so one generic route set parameterized by
 | `GET /models` | Registry catalogue: `[{key, title}, ...]`. |
 | `GET /models/{model_key}/schema` | `ModelSchema` — full presentation metadata built from the backend's minimal set, plus `indexes`. |
 | `POST /models/{model_key}/evaluate?as_snapshot=true` | `{param_overrides: {...}}` → evaluation result. |
+| `POST /models/{model_key}/download-data` | Downloads the model's data files from the platform again (currently Fazzon only; 404 for models without downloadable data) and drops the cached backend, so the next request uses the new data. `200 {message, data_dir}`; `502` if the download fails (the current files stay in place). Not authenticated: the wrapping layers must restrict it to administrators. |
+
+Models with data files (`src.api.registry.DATA_STARTUP`, currently Fazzon) are checked at startup (FastAPI
+lifespan): unless `DT_OVERTURISM_STANDALONE_MODE=true` (the default) the files are downloaded from the platform
+project `PROJECT_NAME`; missing files or a failed download stop the startup. See
+`src.model.fazzon.fazzon_data` and `docs/howto/backend.md` (Model API data).
 
 `GET /schema` no longer returns `backend.schema()` unchanged.
 `src.api.routes._build_metadata()` takes the backend's

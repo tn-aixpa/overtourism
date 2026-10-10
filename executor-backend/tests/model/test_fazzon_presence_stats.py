@@ -1,42 +1,35 @@
-import pandas as pd
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 
+from src.model.fazzon import fazzon_data
 from src.model.fazzon.fazzon_presence_stats import (
-    DATA_DIR_ENV,
-    DAY_TYPE_STATS_FILE,
-    DEFAULT_DAY_TYPE_STATS,
-    DEFAULT_SEASON_STATS,
-    SEASON_STATS_FILE,
     load_presence_stats,
     make_presence_factories,
+    presence_inputs,
 )
+from tests.conftest import DAY_TYPE_STATS, SEASON_STATS, write_fazzon_stats
 
 
-def _write_reference(path, season=DEFAULT_SEASON_STATS, day_type=DEFAULT_DAY_TYPE_STATS):
-    # same layout as the pipeline output: flat columns plus extra metadata columns
-    season.reset_index().assign(calibration="parking_2025", n_days=1).to_parquet(path / SEASON_STATS_FILE)
-    day_type.reset_index().assign(calibration="parking_2025").to_parquet(path / DAY_TYPE_STATS_FILE)
-
-
-def test_defaults_without_data_dir(monkeypatch):
-    monkeypatch.delenv(DATA_DIR_ENV, raising=False)
+def test_reads_reference_datasets_from_data_dir():
     season, day_type = load_presence_stats()
-    assert season is DEFAULT_SEASON_STATS
-    assert day_type is DEFAULT_DAY_TYPE_STATS
-
-
-def test_reads_reference_datasets_from_env_dir(tmp_path, monkeypatch):
-    season_in = DEFAULT_SEASON_STATS.copy()
-    season_in.loc["august", "mean_car_visitors"] = 800.0
-    _write_reference(tmp_path, season=season_in)
-    monkeypatch.setenv(DATA_DIR_ENV, str(tmp_path))
-    season, day_type = load_presence_stats()
-    assert list(season.columns) == list(DEFAULT_SEASON_STATS.columns)
-    assert season.loc["august", "mean_car_visitors"] == 800.0
-    pd.testing.assert_frame_equal(day_type, DEFAULT_DAY_TYPE_STATS, check_dtype=False)
+    assert list(season.index) == ["june", "july", "august", "september"]
+    assert season.loc["august", "mean_car_visitors"] == 790.4
     car, _ = make_presence_factories(season, day_type)
-    expected = 800.0 + DEFAULT_DAY_TYPE_STATS.loc[("august", "peak"), "mean_car_visitors"]
-    assert car("peak", "august").mean() == pytest.approx(expected)
+    assert car("peak", "august").mean() == pytest.approx(790.4 + 112.0)
+
+
+def test_presence_inputs_reads_files_at_every_call(tmp_path, monkeypatch):
+    season = SEASON_STATS.copy()
+    season.loc[season["cluster_name"] == "july", "mean_car_visitors"] = 1000.0
+    write_fazzon_stats(tmp_path, season=season)
+    monkeypatch.setenv(fazzon_data.DATA_DIR_ENV, str(tmp_path))
+    weights, day_type, car, _ = presence_inputs()
+    assert weights["july"] == pytest.approx(31 / 81)
+    assert day_type == {"peak": 2 / 7, "base": 5 / 7}
+    assert car("base", "july").mean() == pytest.approx(1000.0 - 26.2)
 
 
 def test_missing_files_raise(tmp_path):
@@ -45,6 +38,89 @@ def test_missing_files_raise(tmp_path):
 
 
 def test_missing_season_raises(tmp_path):
-    _write_reference(tmp_path, season=DEFAULT_SEASON_STATS.drop(index="june"))
+    write_fazzon_stats(tmp_path, season=SEASON_STATS[SEASON_STATS["cluster_name"] != "june"])
     with pytest.raises(ValueError, match="seasons"):
         load_presence_stats(tmp_path)
+
+
+def test_missing_day_type_column_raises(tmp_path):
+    write_fazzon_stats(tmp_path, day_type=DAY_TYPE_STATS.drop(columns="mean_other_visitors"))
+    with pytest.raises(ValueError, match="missing columns"):
+        load_presence_stats(tmp_path)
+
+
+# ---------------------------------------------------------------- download / startup
+
+
+def _fake_digitalhub(monkeypatch, source_dir=None, error=None):
+    """Replace the digitalhub client: dataitems are copied from *source_dir*, or *error* is raised."""
+
+    def get_dataitem(name):
+        def download(dest, overwrite=False):
+            if error is not None:
+                raise error
+            (Path(dest) / name).write_bytes((source_dir / name).read_bytes())
+
+        return SimpleNamespace(download=download)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "digitalhub",
+        SimpleNamespace(get_project=lambda name: SimpleNamespace(get_dataitem=get_dataitem)),
+    )
+
+
+def test_download_replaces_files(tmp_path, monkeypatch):
+    remote = SEASON_STATS.copy()
+    remote["mean_car_visitors"] += 1.0
+    source = write_fazzon_stats(tmp_path / "remote", season=remote)
+    target = write_fazzon_stats(tmp_path / "local")
+    monkeypatch.setenv(fazzon_data.DATA_DIR_ENV, str(target))
+    _fake_digitalhub(monkeypatch, source_dir=source)
+
+    assert fazzon_data.download_fazzon_data(overwrite=True) == target
+    season, _ = load_presence_stats(target)
+    assert season.loc["august", "mean_car_visitors"] == pytest.approx(791.4)
+
+
+def test_download_skipped_when_files_present(tmp_path, monkeypatch):
+    target = write_fazzon_stats(tmp_path / "local")
+    monkeypatch.setenv(fazzon_data.DATA_DIR_ENV, str(target))
+    _fake_digitalhub(monkeypatch, error=AssertionError("must not download"))
+    assert fazzon_data.download_fazzon_data() == target
+
+
+def test_failed_download_raises_and_keeps_files(tmp_path, monkeypatch):
+    target = write_fazzon_stats(tmp_path / "local")
+    before = (target / fazzon_data.SEASON_STATS_FILE).read_bytes()
+    monkeypatch.setenv(fazzon_data.DATA_DIR_ENV, str(target))
+    _fake_digitalhub(monkeypatch, error=OSError("platform unreachable"))
+    with pytest.raises(RuntimeError, match="platform unreachable"):
+        fazzon_data.download_fazzon_data(overwrite=True)
+    assert (target / fazzon_data.SEASON_STATS_FILE).read_bytes() == before
+
+
+def test_unusable_download_raises_and_keeps_files(tmp_path, monkeypatch):
+    source = write_fazzon_stats(tmp_path / "remote", season=SEASON_STATS.drop(columns="freq_rel"))
+    target = write_fazzon_stats(tmp_path / "local")
+    before = (target / fazzon_data.SEASON_STATS_FILE).read_bytes()
+    monkeypatch.setenv(fazzon_data.DATA_DIR_ENV, str(target))
+    _fake_digitalhub(monkeypatch, source_dir=source)
+    with pytest.raises(ValueError, match="missing columns"):
+        fazzon_data.download_fazzon_data(overwrite=True)
+    assert (target / fazzon_data.SEASON_STATS_FILE).read_bytes() == before
+
+
+def test_startup_standalone_requires_files(tmp_path, monkeypatch):
+    monkeypatch.setenv(fazzon_data.DATA_DIR_ENV, str(tmp_path / "empty"))
+    monkeypatch.setenv("DT_OVERTURISM_STANDALONE_MODE", "true")
+    with pytest.raises(FileNotFoundError, match="missing"):
+        fazzon_data.ensure_fazzon_data()
+
+
+def test_startup_downloads_when_not_standalone(tmp_path, monkeypatch):
+    source = write_fazzon_stats(tmp_path / "remote")
+    monkeypatch.setenv(fazzon_data.DATA_DIR_ENV, str(tmp_path / "local"))
+    monkeypatch.setenv("DT_OVERTURISM_STANDALONE_MODE", "false")
+    _fake_digitalhub(monkeypatch, source_dir=source)
+    assert fazzon_data.ensure_fazzon_data() == tmp_path / "local"

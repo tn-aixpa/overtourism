@@ -39,10 +39,10 @@ python -m model.fazzon.analyze_new_data         # exploratory analysis and plots
     `executor-backend/src/model/fazzon/fazzon_presence_stats.py`, computed from `fazzon_daily`
     with the same method and assumptions (2025 parking x 2.83 people/car, non-car share 0.31).
 
-The Fazzon model (`executor-backend/src/model/fazzon/fazzon_presence_stats.py`) reads the two
-statistics files from the folder in the `FAZZON_DATA_DIR` environment variable, e.g. for a local
-run `FAZZON_DATA_DIR=<repo>/data_preparation/Output/data/final_data/fazzon`; without it, it uses
-its built-in 2025 values.
+The Fazzon model (`executor-backend/src/model/fazzon/`) reads the two statistics files from its
+data folder (`FAZZON_DATA_DIR`, e.g. `<repo>/data_preparation/Output/data/final_data/fazzon` for a
+local run), or downloads them from the platform at startup; it has no built-in values. See
+`executor-backend/src/model/fazzon/fazzon_data.py` and `docs/howto/backend.md` (Model API data).
 
 Assumptions and data questions still open with the domain experts: `OPEN_QUESTIONS.md`.
 Tests: `tests/test_fazzon_pipeline.py` (synthetic fixtures, no data needed).
