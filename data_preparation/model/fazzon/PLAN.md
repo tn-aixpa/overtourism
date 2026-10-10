@@ -15,7 +15,7 @@ domain experts: `OPEN_QUESTIONS.md`.
 
 ## Phase 0: Housekeeping (now)
 
-- [ ] 0.1 Commit the current work on `feat/fazzon-model`: analysis script, `.gitignore`,
+- [x] 0.1 Commit the current work on `feat/fazzon-model`: analysis script, `.gitignore`,
       `OPEN_QUESTIONS.md`, `PLAN.md`.
 
 ## Phase 1: Data on the platform
@@ -62,11 +62,16 @@ Step 2 reference datasets (the contract with the model; to be agreed, see 3.1):
   `fazzon_presence_stats.py`
 
 Tasks:
-- [ ] 2.1 Move the loaders of `analyze_new_data.py` into step-1 modules (no logic change), with
+- [x] 2.1 Move the loaders of `analyze_new_data.py` into step-1 modules (no logic change), with
       tests on small fixtures.
-- [ ] 2.2 Step 2 builders + checks (row counts, date coverage, sums).
-- [ ] 2.3 Upload step and a README section, mirroring `data_preparation/README.md`.
-- [ ] 2.4 Make `analyze_new_data.py` read the step-1/step-2 parquets (single source of truth).
+- [x] 2.2 Step 2 builders + checks (row counts, date coverage, sums). The presence statistics
+      reproduce the hard-coded ones within 0.7% (the model rounded car counts before x 2.83);
+      28/08/2025 must be left out to reproduce them (reason not documented).
+- [x] 2.3 Upload step and a README section, mirroring `data_preparation/README.md`.
+      (`--upload` and the data-lake download are not tested yet: no platform access from the
+      development machine.)
+- [x] 2.4 Make `analyze_new_data.py` read the step-1/step-2 parquets (single source of truth).
+      All analysis outputs unchanged.
 
 ## Phase 3: Model reads the reference datasets
 

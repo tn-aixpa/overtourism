@@ -1,8 +1,14 @@
 """Analisi dei nuovi dati AIxPA 2025 per Fazzon / Alta Val di Sole.
 
 Script semplice con marcatori di cella ``# %%``, eseguibile sia da riga di
-comando (``python analyze_new_data.py``) sia cella-per-cella in un REPL /
-finestra interattiva stile Jupyter (VS Code, PyCharm, `jupytext`, ...).
+comando sia cella-per-cella in un REPL / finestra interattiva stile Jupyter
+(VS Code, PyCharm, `jupytext`, ...). Dalla cartella ``data_preparation``::
+
+    python -m model.fazzon.prepare           # una volta: produce i dataset (vedi prepare.py)
+    python -m model.fazzon.analyze_new_data
+
+I dati sono letti dai parquet prodotti dalla pipeline Fazzon
+(``<normalized>/fazzon/`` e ``<final>/fazzon/``), non dai file sorgente.
 
 Cosa fa, in ordine:
 
@@ -38,11 +44,10 @@ Cosa fa, in ordine:
 Le ipotesi ancora da validare con gli esperti di dominio sono elencate in
 ``OPEN_QUESTIONS.md`` (stessa cartella).
 
-Correzioni di qualita' dei dati incorporate qui (vedi memoria di progetto
-``fazzon_bus_data_quality.md``): il file dei biglietti bus contiene cinque
-righe sparse in agosto relative a un'altra area, non Fazzon, e la navetta
-non ha funzionato al di fuori dell'intervallo 28/06/2025 -> 20/07/2025.
-Entrambi i fatti sono applicati nella costruzione della serie target.
+Correzioni di qualita' dei dati applicate dalla pipeline: il file dei
+biglietti bus 2025 contiene cinque righe sparse in agosto relative a un'altra
+area, non Fazzon, e la navetta 2025 non ha funzionato al di fuori
+dell'intervallo 28/06/2025 -> 20/07/2025.
 
 Nota sulla scelta delle variabili: dove possibile si usa il numero di auto
 (biglietti di parcheggio venduti, dato *misurato*) invece dei "visitatori in
@@ -56,123 +61,59 @@ e i grafici PNG numerati, con etichette in italiano.
 """
 
 # %% Import e configurazione
-import json
-import urllib.request
+import sys
 from pathlib import Path
+
+if __package__ in (None, ""):  # eseguito come file: rende importabili model.* e utils.*
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import polars as pl
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.lines import Line2D
 from scipy import stats
 
+from model.fazzon.prepare import read_normalized, read_reference
+from model.fazzon.reference_datasets import (
+    EVENT_DAYS,
+    REGULATED_PARKING,
+    SHUTTLE_NOT_RUNNING,
+    SHUTTLE_PERIODS,
+)
+
 FAZZON_DIR = Path(__file__).resolve().parent
-DATA_DIR = FAZZON_DIR / "data"
-NEW_DATA_DIR = DATA_DIR / "new"
-OUTPUT_DIR = NEW_DATA_DIR / "analysis_output"
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR = FAZZON_DIR / "data" / "new" / "analysis_output"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 PERSONS_PER_CAR = 2.83  # NetMobility 2021 field study, vedi fazzon_presence_stats.py
 
-# La navetta ha funzionato solo dal 28/06/2025 al 20/07/2025. Le righe sparse
-# successive nel file sorgente (6/13/15/20/27 agosto) si riferiscono a
-# un'altra area e vanno scartate, non trattate come "nessun biglietto
-# venduto quel giorno".
-SHUTTLE_LAST_DAY = pd.Timestamp("2025-07-20")
-
-# Foglio 2025 + 2026 affiancati (stessa riga = stesso giorno della settimana,
-# 2026 = 2025 + 364 giorni). Vedi OPEN_QUESTIONS.md per le colonne dubbie.
-PARKING_XLSX = DATA_DIR / "Dati parcheggio Fazzon.xlsx"
-# Regime 2026: parcheggio a pagamento (20 euro/giorno, 10 euro dopo le 12) con
+# Regime 2026 (definito in reference_datasets.py): parcheggio a pagamento con
 # semaforo e prenotazione dal 4/7 al 31/8, navetta Lakebus dal 4/7 al 30/8.
-REGIME_2026_START = pd.Timestamp("2026-07-04")
-REGIME_2026_SHUTTLE_END = pd.Timestamp("2026-08-30")
-REGIME_2026_PARKING_END = pd.Timestamp("2026-08-31")
+REGIME_2026_START, REGIME_2026_PARKING_END = REGULATED_PARKING
+REGIME_2026_SHUTTLE_END = SHUTTLE_PERIODS["lakebus"][1]
 # Giorni 2026 esclusi dal confronto: evento "5days" (>2000 persone, prati
 # aggiuntivi adibiti a parcheggio, auto non conteggiate) e 21/8 (bus non attivo).
-EXCLUDED_DAYS_2026 = pd.to_datetime(["2026-07-02", "2026-07-03", "2026-08-21"])
+EXCLUDED_DAYS_2026 = EVENT_DAYS.union(SHUTTLE_NOT_RUNNING)
 # Persone per auto secondo il gestore (OPEN_QUESTIONS.md, punto 4): ~2,5 senza
 # regime (2025, e 2026 fuori dal periodo regolato); ~3,5 con il regime 2026,
 # perche' con parcheggio a 20 euro "si sale solo con l'auto piena".
 OCCUPANCY_NO_REGIME = 2.5
 OCCUPANCY_REGIME_2026 = 3.5
 
-# Meteo misurato dalla stazione Meteotrentino di Male' (T0074, 720 m, stazione
-# di riferimento dell'area "Sole, Peio e Rabbi"), scaricato dal servizio open
-# data e salvato in cache in data/meteo/. A differenza di meteo_osservato.csv
-# (valori arrotondati e descrizione testuale, probabilmente il bollettino per
-# localita') sono misure di stazione, disponibili fino a ieri: coprono anche il 2026.
-METEO_DIR = DATA_DIR / "meteo"
-METEO_STATION = "T0074"
-METEO_YEARS = range(2023, 2027)
+# Meteo: stazione Meteotrentino di Male' (T0074), misure giornaliere.
 RAINY_DAY_MM = 1.0  # soglia climatologica standard di "giorno piovoso"
-METEO_SERVICE = "https://dati.meteotrentino.it/service.asmx/datiStoriciCaratteristiciSerie{measure}UnArea?codice={code}&anno={year}"
 
-# Codici delle localita' della Val di Sole in vodafone_aree.csv
-LOC_NAMES = {
-    "LAGO_CAPR": "poi_caprioli",
-    "8": "comune_ossana_pellizzano",
-    "3": "comune_vermiglio",
-    "104": "apt_valdisole",
-    "22": "provincia_trentino",
-}
-VODAFONE_PROFILES = ["TOURIST", "VISITOR"]  # esclude INHABITANT / COMMUTER
-
-BIKE_SENSORS_NEAR_FAZZON = ["TFXV3R06", "GLWB8Q97"]  # Salet->Pellizzano, Fucine di Ossana
-BIKE_SENSOR_SHORT_NAMES = {  # da contamezzi_TM_info.csv
+BIKE_SENSOR_SHORT_NAMES = {  # etichette per la mappa
     "LLWW78M8": "Laghetti S. Leonardo", "GLWB8Q97": "Fucine di Ossana", "TFXV3R06": "Salèt (Pellizzano)",
     "RXSLG442": "Daolasa", "FFXV2R01": "Molini (Caldes)",
 }
-
-# Conteggi del traffico PAT (Servizio Gestione Strade), orari per classe di
-# veicolo / velocita' / direzione, 2022-2025. ``query_passaggi_auto_*.xlsx`` e'
-# solo un riepilogo mensile dello stesso dato (totali identici) e non viene letto.
-VEHICLES_DIR = DATA_DIR / "vehicles"
-ROAD_COUNTS_CSV = VEHICLES_DIR / "esportazione-002.csv"
-ROAD_STATIONS = {
-    "108": "croviana", "110": "pellizzano", "111": "tonale", "113": "dermulo",
-    "155": "pracorno", "156": "celledizzo", "170": "revo", "175": "dimaro",
-}
-ROAD_CAR_CLASSES = [2, 3]  # autovetture e monovolumi, anche con rimorchio
-# Stazione 110 (Pellizzano): sulla SS42 a valle dell'abitato, verso Mezzana,
-# quindi a valle dell'innesto della strada per Fazzon. Sulla SS42 le
-# chilometriche crescono verso valle (Ossana -> Pellizzano -> Mezzana), quindi
-# direzione 2 (chilometriche decrescenti) = verso monte. Coerente con i
-# profili orari (picco del mattino in direzione 2 ad agosto).
-# Conseguenza: il sensore vede le auto dirette a Fazzon che salgono dalla
-# bassa valle -- comprese quelle respinte a parcheggio pieno -- ma non quelle
-# che arrivano da Ossana/Vermiglio/Tonale/Peio o che partono da Pellizzano.
-ROAD_UP_VALLEY_DIR = 2
-ROAD_MORNING_HOURS = range(7, 12)  # 7:00-11:59, la finestra di arrivo dei visitatori giornalieri
-ROAD_MIN_DAILY_CARS = 50  # sotto questa soglia per direzione il sensore e' considerato spento
 # Stazioni di controllo per il confronto anno-su-anno: valli laterali non
 # attraversate dal traffico verso Fazzon (Val di Rabbi, Val di Non) e Val di
 # Peio. Celledizzo non e' un controllo del tutto pulito: gli ospiti della Val
 # di Peio diretti a Fazzon ci passano (scendendo verso Fucine/Ossana), ma
 # sono al massimo poche decine di auto su ~3.800/giorno (~1%).
 ROAD_CONTROL_STATIONS = ["pracorno", "celledizzo", "revo"]
-
-# Posizione delle stazioni (fornita da PAT in UTM 32N / ETRS89, EPSG:25832),
-# convertita in lat/lon WGS84 per non dipendere da pyproj.
-ROAD_STATION_COORDS = {  # stazione: (lat, lon, descrizione)
-    "croviana": (46.34606, 10.90902, "SS42 tra Croviana e Male'"),
-    "pellizzano": (46.31227, 10.77262, "SS42 a valle di Pellizzano, verso Mezzana"),
-    "tonale": (46.26344, 10.61173, "SS42 versante trentino, ~2 km a est del passo"),
-    "dermulo": (46.33014, 11.06402, "Val di Non, Dermulo"),
-    "pracorno": (46.36229, 10.90198, "Val di Rabbi, ~2 km a nord di Male'"),
-    "celledizzo": (46.33704, 10.70649, "Val di Peio, tra Cusiano e Cogolo"),
-    "revo": (46.39307, 11.04813, "Val di Non, Revo'"),
-    "dimaro": (46.32093, 10.87225, "SS239 sopra Dimaro, verso Folgarida/Campiglio"),
-}
-# Posizione indicativa del parcheggio del Lago dei Caprioli (non fornita nei
-# dati: valore approssimato, solo per la mappa).
-FAZZON_COORDS = (46.2930, 10.7425)
-
-VALDISOLE_COMUNI_RE = (
-    r"(?i)OSSANA|PELLIZZANO|VERMIGLIO|DIMARO|MALE|RABBI|PEIO|COMMEZZADURA|CALDES|MEZZANA|FOLGARIDA"
-)
 
 # Etichette in italiano usate nei grafici (non nel codice, per leggibilita' del sorgente)
 IT_LABELS = {
@@ -240,230 +181,37 @@ plt.rcParams.update({
 })
 
 
-# %% 1. Serie target: auto e biglietti navetta a Fazzon
-def build_target() -> pd.DataFrame:
-    park = pd.read_csv(DATA_DIR / "Dati parcheggio Fazzon 2025 per IA_Parcheggio.csv")
-    park["date"] = pd.to_datetime(park["DATA"])
-    park = park.rename(columns={"N° auto": "parking_tickets"})[["date", "parking_tickets"]]
-    park["car_visitors"] = park["parking_tickets"] * PERSONS_PER_CAR
-
-    bus_raw = pd.read_csv(DATA_DIR / "Riepilogo dati bus estate 2025_Foglio1.csv")
-    bus = bus_raw.iloc[:, [1, 2]].copy()
-    bus.columns = ["date", "bus_tickets_raw"]
-    bus = bus.dropna(subset=["date"])
-    bus = bus[bus["date"].str.match(r"^\d{4}-\d{2}-\d{2}")]
-    bus["date"] = pd.to_datetime(bus["date"])
-    bus["bus_tickets_raw"] = pd.to_numeric(bus["bus_tickets_raw"], errors="coerce")
-
-    target = park.merge(bus, on="date", how="outer").sort_values("date").reset_index(drop=True)
-    target["shuttle_running"] = target["date"] <= SHUTTLE_LAST_DAY
-    # Scarta le righe sparse dopo il 20/07/2025: confermato che si riferiscono
-    # a un'altra area, non Fazzon (memoria di progetto: fazzon_bus_data_quality.md).
-    target["bus_tickets"] = target["bus_tickets_raw"].where(target["shuttle_running"])
-    target["dow"] = target["date"].dt.day_name()
-    target["month"] = target["date"].dt.month
-    target["is_weekend"] = (target["date"].dt.dayofweek >= 5).astype(int)
-    return target.drop(columns=["bus_tickets_raw"])
+# %% 1-3. Dati: dataset della pipeline Fazzon e pannello giornaliero 2025
+def load_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """``fazzon_daily`` (dataset di riferimento), validita' giornaliera dei
+    contatori stradali e anagrafica delle stazioni, prodotti da
+    ``python -m model.fazzon.prepare``."""
+    try:
+        reference = read_reference()
+        normalized = read_normalized()
+    except FileNotFoundError as e:
+        raise SystemExit(f"{e}\nEseguire prima, da data_preparation: python -m model.fazzon.prepare") from None
+    return reference["fazzon_daily"], normalized["road_counts_daily"], normalized["stations"]
 
 
-# %% 2. Serie predittive
-def _load_vodafone_presences() -> pd.DataFrame:
-    """Presenze Vodafone giornaliere a granularita' POI/comune/apt/provincia.
+def build_panel(daily: pd.DataFrame) -> pd.DataFrame:
+    """Stagione Fazzon 2025 (giorni con conteggio auto): target e predittori.
 
-    Somma la riga nazionale italiana (``userCountry == "ITA"``) con il totale
-    estero pre-aggregato (``*_STR.csv``) invece di ogni singola nazionalita',
-    per aggirare la soglia di privacy (i valori sotto 15 sono riportati come
-    0 mascherato a livello di singola nazionalita').
+    ``bus_tickets`` = biglietti Greenbus venduti, solo nel periodo della navetta
+    pilota; ``shuttle_running`` = navetta pilota attiva.
     """
-    loc_filter = list(LOC_NAMES.keys())
-
-    att = (
-        pl.scan_csv(NEW_DATA_DIR / "vodafone_attendences.csv", schema_overrides={"locId": pl.Utf8})
-        .filter(pl.col("locId").is_in(loc_filter))
-        .select(["date", "locId", "userCountry", "userProfile", "value"])
-        .collect()
-        .to_pandas()
-    )
-    att_str = (
-        pl.scan_csv(NEW_DATA_DIR / "vodafone_attendences_STR.csv", schema_overrides={"locId": pl.Utf8})
-        .filter(pl.col("locId").is_in(loc_filter))
-        .select(["date", "locId", "userProfile", "value"])
-        .collect()
-        .to_pandas()
-    )
-
-    ita = (
-        att[(att["userCountry"] == "ITA") & (att["userProfile"].isin(VODAFONE_PROFILES))]
-        .groupby(["date", "locId"])["value"].sum().rename("value_ita")
-    )
-    strv = (
-        att_str[att_str["userProfile"].isin(VODAFONE_PROFILES)]
-        .groupby(["date", "locId"])["value"].sum().rename("value_str")
-    )
-    pres = pd.concat([ita, strv], axis=1).fillna(0)
-    pres["presences_tourist_visitor"] = pres["value_ita"] + pres["value_str"]
-    pres = pres.reset_index()
-
-    wide = pres.pivot(index="date", columns="locId", values="presences_tourist_visitor")
-    wide.columns = [f"vf_pres_{LOC_NAMES.get(c, c)}" for c in wide.columns]
-    wide.index = pd.to_datetime(wide.index)
-    return wide.reset_index().rename(columns={"index": "date"})
-
-
-def _load_meteo() -> pd.DataFrame:
-    meteo = pd.read_csv(NEW_DATA_DIR / "meteo_osservato.csv")
-    meteo["date"] = pd.to_datetime(meteo["data"]).dt.normalize()
-    male = meteo[meteo["comune"] == "MALE'"][["date", "meteo", "tmin", "tmax", "pioggiamm"]].copy()
-    return male.rename(columns={
-        "meteo": "weather_desc", "tmin": "tmin_bollettino", "tmax": "tmax_bollettino", "pioggiamm": "rain_mm_bollettino",
-    })
-
-
-def fetch_meteo_station(refresh: bool = False) -> pd.DataFrame:
-    """Temperatura min/max e pioggia giornaliere della stazione ``METEO_STATION``.
-
-    Scarica un file JSON per anno e misura in ``METEO_DIR`` solo se manca (o
-    con ``refresh=True``; l'anno in corso va riscaricato per avere i giorni
-    nuovi). I codici di qualita' non sono documentati dal servizio: 145 dal
-    2024, 1 nel 2023 (e 81 su 4 giorni del 2023); sono riportati cosi' come
-    arrivano in ``meteo_quality``.
-    """
-    METEO_DIR.mkdir(exist_ok=True)
-    frames = {}
-    for measure in ("Temperature", "Precipitazioni"):
-        parts = []
-        for year in METEO_YEARS:
-            path = METEO_DIR / f"{METEO_STATION}_{measure}_{year}.json"
-            if refresh or not path.exists():
-                url = METEO_SERVICE.format(measure=measure, code=METEO_STATION, year=year)
-                with urllib.request.urlopen(url, timeout=60) as resp:
-                    path.write_bytes(resp.read())
-            parts.append(pd.DataFrame(json.loads(path.read_text())["dati"]))
-        frames[measure] = pd.concat(parts, ignore_index=True)
-
-    temp = frames["Temperature"].rename(columns={"Min": "tmin", "Max": "tmax", "QualityMax": "meteo_quality"})
-    rain = frames["Precipitazioni"].rename(columns={"Valore": "rain_mm"})
-    out = temp.merge(rain[["giorno", "rain_mm"]], on="giorno", how="outer")
-    out["date"] = pd.to_datetime(out["giorno"])  # ISO yyyy-mm-dd (le piogge arrivano ordinate per giorno, poi mese)
-    return out[["date", "tmin", "tmax", "rain_mm", "meteo_quality"]].sort_values("date").reset_index(drop=True)
-
-
-def _load_bici() -> pd.DataFrame:
-    bici = pd.read_csv(NEW_DATA_DIR / "contabici_VALDISOLE.csv")
-    bici["date"] = pd.to_datetime(bici["data"]).dt.normalize()
-    bici["bikes_peds"] = bici[["cl8", "cl10"]].sum(axis=1)
-    near = (
-        bici[bici["sensore"].isin(BIKE_SENSORS_NEAR_FAZZON)]
-        .groupby("date")["bikes_peds"].sum().rename("bici_near_fazzon")
-    )
-    valley = bici.groupby("date")["bikes_peds"].sum().rename("bici_valley_total")
-    return pd.concat([near, valley], axis=1).reset_index()
-
-
-def _load_tgc_accessi_tonale() -> pd.DataFrame:
-    accessi = (
-        pl.scan_csv(NEW_DATA_DIR / "TGC_Accessi.csv", separator=";", encoding="utf8-lossy")
-        .filter(pl.col("Luogo").str.contains(VALDISOLE_COMUNI_RE))
-        .select(["Data Marcata", "NomeServizio", "Entranti"])
-        .collect()
-        .to_pandas()
-    )
-    accessi["date"] = pd.to_datetime(
-        accessi["Data Marcata"], format="%d/%m/%Y %H:%M", errors="coerce"
-    ).dt.normalize()
-    tonale = accessi["NomeServizio"].str.contains("Tonale", case=False, na=False)
-    return accessi[tonale].groupby("date")["Entranti"].sum().rename("tgc_accessi_tonale").reset_index()
-
-
-def load_road_counts_hourly() -> pd.DataFrame:
-    """Auto (classi 2+3) per stazione / giorno / direzione / ora.
-
-    Il CSV sorgente e' ~2.3 GB (una riga per classe x fascia di velocita'):
-    polars lo aggrega in streaming a ~0.5 M righe.
-    """
-    hourly = (
-        pl.scan_csv(ROAD_COUNTS_CSV, schema_overrides={"PUNTO": pl.Utf8, "ORA": pl.Utf8})
-        .filter(pl.col("CLASSE").is_in(ROAD_CAR_CLASSES))
-        .with_columns(
-            pl.col("DATA").str.strptime(pl.Date, "%d/%m/%Y").alias("date"),
-            pl.col("ORA").cast(pl.Int32).alias("hour"),
-            pl.col("PUNTO").replace_strict(ROAD_STATIONS).alias("station"),
-        )
-        .group_by(["station", "date", "DIREZIONE", "hour"])
-        .agg(pl.col("N_VEICOLI").sum().alias("cars"))
-        .rename({"DIREZIONE": "direction"})
-        .collect()
-        .to_pandas()
-    )
-    hourly["date"] = pd.to_datetime(hourly["date"])
-    return hourly
-
-
-def road_daily_validity(hourly: pd.DataFrame) -> pd.DataFrame:
-    """Una riga per stazione / giorno / direzione, con flag ``valid``.
-
-    Il dato e' valido se sono presenti almeno 23 ore e almeno
-    ``ROAD_MIN_DAILY_CARS`` auto: diversi sensori restano "accesi" ma
-    riportano zero per mesi (Dimaro da meta' 2024, Tonale nel 2022, la
-    direzione 2 di Croviana quasi sempre), e quegli zeri vanno trattati come
-    dato mancante, non come strada vuota.
-    """
-    daily = (
-        hourly.groupby(["station", "date", "direction"])
-        .agg(cars=("cars", "sum"), hours=("hour", "nunique"))
-        .reset_index()
-    )
-    daily["valid"] = (daily["hours"] >= 23) & (daily["cars"] >= ROAD_MIN_DAILY_CARS)
-    return daily
-
-
-def road_daily_series(hourly: pd.DataFrame) -> pd.DataFrame:
-    """Serie giornaliere di auto usate come predittori (NaN dove il sensore
-    non e' affidabile)."""
-    daily = road_daily_validity(hourly)
-    daily["cars"] = daily["cars"].where(daily["valid"])
-    by_dir = daily.pivot_table(index="date", columns=["station", "direction"], values="cars", dropna=False)
-
-    up = hourly[(hourly["station"] == "pellizzano") & (hourly["direction"] == ROAD_UP_VALLEY_DIR)
-                & hourly["hour"].isin(ROAD_MORNING_HOURS)]
-    morning_up = up.groupby("date")["cars"].sum().where(by_dir[("pellizzano", ROAD_UP_VALLEY_DIR)].notna())
-
-    def both_dirs(station: str) -> pd.Series:
-        # sum(min_count=2): NaN se una delle due direzioni manca
-        return by_dir[station].sum(axis=1, min_count=2)
-
-    out = pd.DataFrame({
-        "strada_pellizzano_salita_mattina": morning_up,
-        "strada_pellizzano_totale": both_dirs("pellizzano"),
-        "strada_pracorno_totale": both_dirs("pracorno"),
-        "strada_celledizzo_totale": both_dirs("celledizzo"),
-        "strada_tonale_totale": both_dirs("tonale"),
-        "strada_revo_totale": both_dirs("revo"),
-    })
-    out.index.name = "date"
-    return out.reset_index()
-
-
-def build_predictors(road_hourly: pd.DataFrame) -> pd.DataFrame:
-    vodafone_daily = _load_vodafone_presences()
-    meteo_daily = fetch_meteo_station().merge(_load_meteo(), on="date", how="left")
-    bici_daily = _load_bici()
-    tgc_daily = _load_tgc_accessi_tonale()
-    road_daily = road_daily_series(road_hourly).drop(columns=["strada_revo_totale"])
-
-    predictors = vodafone_daily
-    for df in (meteo_daily, bici_daily, tgc_daily, road_daily):
-        predictors = predictors.merge(df, on="date", how="left")
-    return predictors
-
-
-# %% 3. Assemblaggio del pannello giornaliero
-def build_panel(road_hourly: pd.DataFrame) -> pd.DataFrame:
-    target = build_target()
-    predictors = build_predictors(road_hourly)
-    panel = target.merge(predictors, on="date", how="left")
-    panel["is_rainy"] = (panel["rain_mm"] >= RAINY_DAY_MM).astype(int)
-    return panel
+    p = daily[(daily["year"] == 2025) & daily["cars"].notna()].copy()
+    p = p.rename(columns={"cars": "parking_tickets", "greenbus_tickets": "bus_tickets"})
+    p["car_visitors"] = p["parking_tickets"] * PERSONS_PER_CAR
+    p["shuttle_running"] = p["shuttle"].eq("greenbus_pilot")
+    p["is_rainy"] = (p["rain_mm"] >= RAINY_DAY_MM).astype(int)
+    keep = ["date", "parking_tickets", "car_visitors", "shuttle_running", "bus_tickets", "dow", "month",
+            "is_weekend"]
+    predictors = [c for c in p.columns if c.startswith(("vf_pres_", "bici_", "tgc_", "strada_"))
+                  and c != "strada_revo_totale"]
+    weather = ["weather_desc", "tmin", "tmax", "rain_mm", "meteo_quality", "tmin_bollettino", "tmax_bollettino",
+               "rain_mm_bollettino", "is_rainy"]
+    return p[keep + predictors + weather].reset_index(drop=True)
 
 
 # %% 4. Tabella di correlazione (grezza + entro-mese) e matrice di correlazione
@@ -667,7 +415,7 @@ def shuttle_natural_experiment(panel: pd.DataFrame, demand_col: str = "vf_pres_a
     }
 
 
-def shuttle_road_did(road_hourly: pd.DataFrame, years=(2023, 2024, 2025)) -> pd.DataFrame:
+def shuttle_road_did(daily: pd.DataFrame, years=(2023, 2024, 2025)) -> pd.DataFrame:
     """Confronto anno-su-anno sulla SS42 a Pellizzano.
 
     Per ogni anno: rapporto medio fra auto verso monte al mattino a
@@ -677,7 +425,7 @@ def shuttle_road_did(road_hourly: pd.DataFrame, years=(2023, 2024, 2025)) -> pd.
     finestra/dopo dovrebbe essere piu' basso che nel 2023/2024. Il 2022 e'
     escluso: la direzione 2 a Pellizzano manca per gran parte dell'estate.
     """
-    daily = road_daily_series(road_hourly).set_index("date")
+    daily = daily.set_index("date")
     controls = daily[[f"strada_{s}_totale" for s in ROAD_CONTROL_STATIONS]].sum(axis=1, min_count=len(ROAD_CONTROL_STATIONS))
     ratio = daily["strada_pellizzano_salita_mattina"] / controls
 
@@ -695,45 +443,21 @@ def shuttle_road_did(road_hourly: pd.DataFrame, years=(2023, 2024, 2025)) -> pd.
 
 
 # %% 8. Confronto stagione 2025 vs 2026
-def load_parking_2025_2026() -> pd.DataFrame:
-    """Legge ``Dati parcheggio Fazzon.xlsx`` in formato lungo: una riga per
-    giorno, con ``year`` e la data 2025 corrispondente (stesso giorno della
-    settimana) in ``date_2025``.
+def load_parking_2025_2026(daily: pd.DataFrame) -> pd.DataFrame:
+    """Stagioni 2025 e 2026 in formato lungo: una riga per giorno, con
+    ``year`` e la data 2025 corrispondente (stesso giorno della settimana,
+    2026 = 2025 + 364 giorni) in ``date_2025``.
 
-    I totali di persone sono ricalcolati qui: la colonna \"N° persone 2026\"
-    del foglio ha formule incoerenti (OPEN_QUESTIONS.md, punto 7).
-    \"N° persone bus\" e' trattato come persone in salita; le persone in
-    discesa (2026, dal 1/8) sono annotate come testo nella colonna note.
+    Le persone sono stimate qui (coefficienti di occupazione del gestore):
+    \"N° persone bus\" e' trattato come persone in salita.
     """
-    raw = pd.read_excel(PARKING_XLSX, header=None, skiprows=3).iloc[:, :18]
-    raw.columns = [
-        "date_2025", "cars_2025", "_p_auto", "_p_auto_corr", "bus_up_2025", "moto_persons_2025", "_p_tot", "_p_tot_corr",
-        "date_2026", "cars_full_2026", "_p_full", "cars_half_2026", "_p_half", "bus_up_2026", "moto_persons_2026",
-        "_p_tot_2026", "note_2026", "weather_note_2026",
-    ]
-    raw = raw.dropna(subset=["date_2025"])
-    num = lambda c: pd.to_numeric(raw[c], errors="coerce")
-    notes = raw["note_2026"].astype("string")
-    bus_down = notes.str.extract(r"(\d+)")[0].astype(float).where(notes.str.contains("discesa", na=False))
-
-    y25 = pd.DataFrame({
-        "date": pd.to_datetime(raw["date_2025"]), "year": 2025,
-        "cars_full": num("cars_2025"), "cars_half": 0.0,
-        "bus_up": num("bus_up_2025"), "bus_down": np.nan, "moto_persons": num("moto_persons_2025"),
-        "note": pd.NA,
-    })
-    y26 = pd.DataFrame({
-        "date": pd.to_datetime(raw["date_2026"]), "year": 2026,
-        "cars_full": num("cars_full_2026"), "cars_half": num("cars_half_2026").fillna(0),
-        "bus_up": num("bus_up_2026"), "bus_down": bus_down, "moto_persons": num("moto_persons_2026"),
-        "note": raw["weather_note_2026"].astype("string").fillna(notes.where(~notes.str.contains("discesa", na=False))),
-    })
+    y26 = daily[(daily["year"] == 2026) & (daily["cars"].notna() | daily["event_day"])].copy()
+    y26["date_2025"] = y26["date"] - pd.Timedelta(days=364)
+    y25 = daily[daily["date"].isin(y26["date_2025"])].copy()
     y25["date_2025"] = y25["date"]
-    y26["date_2025"] = y25["date"].to_numpy()
     out = pd.concat([y25, y26], ignore_index=True)
-    out = out.merge(fetch_meteo_station()[["date", "tmax", "rain_mm"]], on="date", how="left")
+    out["cars_half"] = out["cars_half"].fillna(0)
     out["is_rainy"] = (out["rain_mm"] >= RAINY_DAY_MM).astype(int)
-    out["cars"] = out["cars_full"] + out["cars_half"]
     out["excluded"] = out["date"].isin(EXCLUDED_DAYS_2026)
     in_regime = out["date"].between(REGIME_2026_START, REGIME_2026_PARKING_END)
     out["occupancy"] = np.where(in_regime, OCCUPANCY_REGIME_2026, OCCUPANCY_NO_REGIME)
@@ -742,7 +466,10 @@ def load_parking_2025_2026() -> pd.DataFrame:
     extra = out["bus_up"].fillna(0) + out["moto_persons"].fillna(0)
     out["persons_total"] = out["persons_cars"] + extra
     out["persons_total_2_83"] = out["persons_cars_2_83"] + extra
-    return out
+    cols = ["date", "year", "cars_full", "cars_half", "bus_up", "bus_down", "moto_persons", "note", "tmax",
+            "rain_mm", "date_2025", "is_rainy", "cars", "excluded", "occupancy", "persons_cars",
+            "persons_cars_2_83", "persons_total", "persons_total_2_83"]
+    return out[cols]
 
 
 def _period_2026(date_2026: pd.Timestamp) -> str:
@@ -1080,11 +807,10 @@ def plot_shuttle_road_did(did: pd.DataFrame, path: Path):
     plt.close(fig)
 
 
-def plot_road_data_coverage(road_hourly: pd.DataFrame, panel: pd.DataFrame, path: Path):
+def plot_road_data_coverage(road_daily: pd.DataFrame, panel: pd.DataFrame, path: Path):
     """Copertura dei sensori di traffico: giorni validi per stazione e
     direzione, 2022-2025, con la stagione Fazzon 2025 evidenziata."""
-    daily = road_daily_validity(road_hourly)
-    grid = daily.pivot_table(index=["station", "direction"], columns="date", values="valid", aggfunc="first")
+    grid = road_daily.pivot_table(index=["station", "direction"], columns="date", values="valid", aggfunc="first")
     all_days = pd.date_range(grid.columns.min(), grid.columns.max(), freq="D")
     grid = grid.reindex(columns=all_days).fillna(False).astype(float)
     labels = [f"{s.capitalize()} dir.{d}" for s, d in grid.index]
@@ -1120,12 +846,13 @@ def plot_road_data_coverage(road_hourly: pd.DataFrame, panel: pd.DataFrame, path
     plt.close(fig)
 
 
-def plot_sensor_map(panel: pd.DataFrame, path: Path):
+def plot_sensor_map(stations: pd.DataFrame, path: Path):
     """Mappa schematica (senza fondo cartografico) di stazioni di traffico,
     contatori bici/pedoni e Fazzon, colorati per ruolo nell'analisi."""
-    bike = pd.read_csv(NEW_DATA_DIR / "contamezzi_TM_info.csv", sep=";", on_bad_lines="skip")
-    bike = bike[bike["ambito"] == "VALDISOLE"].drop_duplicates("sensore")
-    bike["label"] = bike["sensore"].map(BIKE_SENSOR_SHORT_NAMES)
+    road = stations[stations["kind"] == "road"]
+    bike = stations[stations["kind"] == "bike"].copy()
+    bike["label"] = bike["code"].map(BIKE_SENSOR_SHORT_NAMES)
+    fazzon = stations[stations["kind"] == "poi"].iloc[0]
 
     role = {
         "pellizzano": ("Predittore principale (auto verso monte 7-12)", C_BLUE),
@@ -1138,19 +865,19 @@ def plot_sensor_map(panel: pd.DataFrame, path: Path):
 
     fig, ax = plt.subplots(figsize=(13, 6.2))
     ax.grid(False)
-    for station, (lat, lon, _) in ROAD_STATION_COORDS.items():
+    for station, lat, lon in road[["name", "lat", "lon"]].itertuples(index=False):
         _, color = role.get(station, unused)
         ax.scatter(lon, lat, s=90, color=color, edgecolor=SURFACE, linewidth=1.2, zorder=4)
         ax.annotate(station.capitalize(), (lon, lat), xytext=(6, 6), textcoords="offset points",
                     fontsize=8.5, color=C_INK)
-    near = bike["sensore"].isin(BIKE_SENSORS_NEAR_FAZZON)
-    ax.scatter(bike["longitudine"], bike["latitudine"], marker="^", s=70,
+    near = bike["role"].eq("near_fazzon")
+    ax.scatter(bike["lon"], bike["lat"], marker="^", s=70,
                color=np.where(near, C_ORANGE, C_SURFACE_ORANGE), edgecolor=C_ORANGE, linewidth=1.2, zorder=3)
     for _, r in bike.iterrows():
-        ax.annotate(r["label"], (r["longitudine"], r["latitudine"]), xytext=(0, -13), textcoords="offset points",
+        ax.annotate(r["label"], (r["lon"], r["lat"]), xytext=(0, -13), textcoords="offset points",
                     ha="center", fontsize=7.5, color=C_INK2)
-    ax.scatter(*FAZZON_COORDS[::-1], marker="*", s=260, color=C_RED_STATUS, edgecolor=SURFACE, zorder=5)
-    ax.annotate("Fazzon / Lago dei Caprioli", FAZZON_COORDS[::-1], xytext=(8, -4), textcoords="offset points",
+    ax.scatter(fazzon["lon"], fazzon["lat"], marker="*", s=260, color=C_RED_STATUS, edgecolor=SURFACE, zorder=5)
+    ax.annotate("Fazzon / Lago dei Caprioli", (fazzon["lon"], fazzon["lat"]), xytext=(8, -4), textcoords="offset points",
                 fontsize=9, color=C_RED_STATUS, fontweight="bold")
 
     ax.set_aspect(1 / np.cos(np.deg2rad(46.33)))
@@ -1261,10 +988,9 @@ def plot_2025_vs_2026_periods(comp: pd.DataFrame, path: Path):
 
 # %% Main
 def main():
-    print("Lettura dei conteggi di traffico PAT...")
-    road_hourly = load_road_counts_hourly()
-    print("Costruzione del pannello dati...")
-    panel = build_panel(road_hourly)
+    print("Lettura dei dataset della pipeline Fazzon...")
+    daily, road_daily, stations = load_data()
+    panel = build_panel(daily)
     panel.to_csv(OUTPUT_DIR / "panel_daily.csv", index=False)
     print(f"  {len(panel)} giorni, {panel['date'].min().date()} -> {panel['date'].max().date()}")
 
@@ -1310,7 +1036,7 @@ def main():
             print(f"  {k}: {v}")
 
     print("\nConfronto anno-su-anno sulla SS42 (Pellizzano vs valli di controllo):")
-    did = shuttle_road_did(road_hourly)
+    did = shuttle_road_did(daily)
     did.to_csv(OUTPUT_DIR / "shuttle_road_did.csv", index=False)
     print(did.to_string(index=False))
 
@@ -1333,11 +1059,11 @@ def main():
     plot_shuttle_experiment(road_panel, "strada_pellizzano_salita_mattina", result_road,
                             OUTPUT_DIR / "05b_shuttle_natural_experiment_road.png")
     plot_shuttle_road_did(did, OUTPUT_DIR / "08_shuttle_road_year_over_year.png")
-    plot_road_data_coverage(road_hourly, panel, OUTPUT_DIR / "09_road_data_coverage.png")
-    plot_sensor_map(panel, OUTPUT_DIR / "00_sensor_map.png")
+    plot_road_data_coverage(road_daily, panel, OUTPUT_DIR / "09_road_data_coverage.png")
+    plot_sensor_map(stations, OUTPUT_DIR / "00_sensor_map.png")
 
     print("\nConfronto 2025 vs 2026 (medie giornaliere per periodo, stessi giorni della settimana):")
-    park = load_parking_2025_2026()
+    park = load_parking_2025_2026(daily)
     park.to_csv(OUTPUT_DIR / "parking_2025_2026_daily.csv", index=False)
     comp = compare_2025_2026(park)
     comp.to_csv(OUTPUT_DIR / "compare_2025_2026.csv", index=False)
