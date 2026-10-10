@@ -77,15 +77,15 @@ Tasks:
 
 ## Phase 3: Model reads the reference datasets
 
-- [ ] 3.1 **Design decision** (to be discussed): what the model consumes.
-      a) Pre-computed `fazzon_presence_stats` (model only loads numbers), or
-      b) `fazzon_daily` and computes the stats itself (calibration logic lives in the model).
-      Proposal: (a), with the computation in step 2 and documented there.
-- [ ] 3.2 **Design decision** (with the backend owners): how `executor-backend` gets the data.
-      Proposal: a loader modelled on `download_index_data()` (DigitalHub dataitem → local cache),
-      with the current hard-coded values kept as a bundled fallback so tests and offline runs work.
-- [ ] 3.3 Replace the hard-coded tables in `fazzon_presence_stats.py` with the loader; keep the
-      same interface (`season_stats`, `day_type_stats`, `make_presence_factories`).
+- [x] 3.1 What the model consumes: the pre-computed statistics (`fazzon_presence_season_stats`,
+      `fazzon_presence_day_type_stats`); the calibration lives in pipeline step 2.
+- [~] 3.2 How `executor-backend` gets the data. Done: the model reads the parquet files from the
+      folder in `FAZZON_DATA_DIR`; unset, it uses the built-in 2025 values (no platform client in
+      `executor-backend`). **Open (with the backend owners):** how a deployment fills that folder
+      from the platform (e.g. an init step with `digitalhub`, as `download_index_data()`).
+- [x] 3.3 Replace the hard-coded tables in `fazzon_presence_stats.py` with the loader; keep the
+      same interface (`season_stats`, `day_type_stats`, `make_presence_factories`). The hard-coded
+      tables stay as `DEFAULT_*` (fallback); their comments fixed (per-season SD, 28/08 left out).
 - [ ] 3.4 Model content updates enabled by the new data (each needs a decision):
       - non-car visitors: 2026 bus counts are measured, so they replace the 0.31 ASSUMPTION
         for the shuttle part
@@ -94,7 +94,12 @@ Tasks:
       - day-type buckets: the analysis finds ~no weekend effect; re-derive with 2025 + 2026
       - weather: station data now exists, so a weather component is possible
       - capacity: revisit "car saturation" (not confirmed against road counts)
-- [ ] 3.5 Regression check: model KPIs before and after on the existing scenarios.
+- [x] 3.5 Regression check on the 7 predefined scenarios: without `FAZZON_DATA_DIR` outputs are
+      identical; with the pipeline statistics the sustainability fields are identical and the
+      visitor samples move by < 0.2 visitors on average.
+      Note for 3.4: the overall field is limited by the lakeside constraint, so the shuttle and
+      mode-share scenarios (B1, B2, C1) give the same overall result as AS_IS (only the road
+      sub-field changes).
 
 ## Phase 4: Pending analysis
 

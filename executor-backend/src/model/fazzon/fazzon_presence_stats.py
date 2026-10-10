@@ -5,9 +5,8 @@ Two presence variables are modelled:
 ``pv_visitors_car``
     Daily visitors arriving by private car.  Derived from 2025 Fazzon parking-ticket
     data by applying **PERSONS_PER_CAR = 2.83** (NetMobility 2021 field study).
-    Season means and within-cell standard deviations are calibrated from daily
-    parking-ticket counts aggregated over the 2025 regulated season (81 days,
-    June–September).
+    Season means and standard deviations are calibrated from daily parking-ticket
+    counts over the 2025 season (81 days, June–September; 28/08/2025 is left out).
 
 ``pv_visitors_other``
     Daily visitors arriving by non-car modes (shuttle bus, on foot, bicycle).
@@ -23,6 +22,17 @@ Additive decomposition::
     var_total  = within_cell_var(season)
 
 Unlike Portofino, there is no weather CV (no weather labels in any Fazzon dataset).
+
+Data source
+-----------
+The season and day-type tables are the reference datasets
+``fazzon_presence_season_stats`` and ``fazzon_presence_day_type_stats`` produced by
+the Fazzon data-preparation pipeline (``data_preparation/model/fazzon``), read from
+the folder in the ``FAZZON_DATA_DIR`` environment variable (parquet files, see
+:func:`load_presence_stats`).  Without ``FAZZON_DATA_DIR`` the built-in
+:data:`DEFAULT_SEASON_STATS` / :data:`DEFAULT_DAY_TYPE_STATS` are used: the same 2025
+calibration, written out by hand (car counts rounded to whole tickets before × 2.83,
+so they differ from the pipeline output by < 1 %).
 
 Day-type structure (see :data:`DAY_TYPE_BUCKETS`):
 
@@ -40,8 +50,14 @@ conventional weekend (ASSUMPTION).
 
 # SPDX-License-Identifier: Apache-2.0
 
+import logging
+import os
+from pathlib import Path
+
 import pandas as pd
 from scipy import stats
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Physical constants
@@ -104,16 +120,17 @@ update this dict when day-of-week data become available for those seasons.
 #   august    n=30   mean_tickets=279  sd_tickets= 95   freq_rel=30/81
 #   september n=17   mean_tickets= 80  sd_tickets= 42   freq_rel=17/81
 #
-# std values stored here = within-cell residual std (after removing the season
-# mean AND the per-season day-type correction from each observation).
+# std values stored here = per-season standard deviation of the daily counts (the
+# day-type correction is NOT removed first).  28/08/2025 (27 tickets) is left out
+# (August n=30); the reason is not documented.
 
-season_stats = pd.DataFrame(
+DEFAULT_SEASON_STATS = pd.DataFrame(
     [
         {
             "cluster_name": "june",
             "freq_rel": 3 / 81,
             "mean_car_visitors": 600.0,  # 212 tickets × 2.83
-            "std_car_visitors": 311.3,  # 110 × 2.83   within-cell residual std
+            "std_car_visitors": 311.3,  # 110 × 2.83   per-season std
             "mean_other_visitors": 269.4,  # 600.0 × 0.449   ASSUMPTION
             "std_other_visitors": 134.7,  # 269.4 × 0.50    ASSUMPTION  50% relative SD
         },
@@ -121,7 +138,7 @@ season_stats = pd.DataFrame(
             "cluster_name": "july",
             "freq_rel": 31 / 81,
             "mean_car_visitors": 498.1,  # 176 × 2.83
-            "std_car_visitors": 152.8,  # 54 × 2.83    within-cell residual std
+            "std_car_visitors": 152.8,  # 54 × 2.83    per-season std
             "mean_other_visitors": 223.6,  # 498.1 × 0.449   ASSUMPTION
             "std_other_visitors": 111.8,  # 223.6 × 0.50    ASSUMPTION  50% relative SD
         },
@@ -129,7 +146,7 @@ season_stats = pd.DataFrame(
             "cluster_name": "august",
             "freq_rel": 30 / 81,
             "mean_car_visitors": 789.6,  # 279 × 2.83
-            "std_car_visitors": 268.9,  # 95 × 2.83    within-cell residual std
+            "std_car_visitors": 268.9,  # 95 × 2.83    per-season std
             "mean_other_visitors": 354.5,  # 789.6 × 0.449   ASSUMPTION
             "std_other_visitors": 177.3,  # 354.5 × 0.50    ASSUMPTION  50% relative SD
         },
@@ -137,7 +154,7 @@ season_stats = pd.DataFrame(
             "cluster_name": "september",
             "freq_rel": 17 / 81,
             "mean_car_visitors": 226.4,  # 80 × 2.83
-            "std_car_visitors": 118.9,  # 42 × 2.83    within-cell residual std
+            "std_car_visitors": 118.9,  # 42 × 2.83    per-season std
             "mean_other_visitors": 101.6,  # 226.4 × 0.449   ASSUMPTION
             "std_other_visitors": 50.8,  # 101.6 × 0.50    ASSUMPTION  50% relative SD
         },
@@ -166,7 +183,7 @@ season_stats = pd.DataFrame(
 #
 # June, September: zero corrections — ASSUMPTION (no day-of-week data)
 
-day_type_stats = pd.DataFrame(
+DEFAULT_DAY_TYPE_STATS = pd.DataFrame(
     [
         {
             "season": "june",
@@ -228,6 +245,58 @@ day_type_stats = pd.DataFrame(
 ).set_index(["season", "day_type"])
 
 # ---------------------------------------------------------------------------
+# Loading the reference datasets
+# ---------------------------------------------------------------------------
+
+DATA_DIR_ENV = "FAZZON_DATA_DIR"
+SEASON_STATS_FILE = "fazzon_presence_season_stats.parquet"
+DAY_TYPE_STATS_FILE = "fazzon_presence_day_type_stats.parquet"
+
+
+def load_presence_stats(data_dir: str | Path | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return ``(season_stats, day_type_stats)`` in the layout of the DEFAULT tables.
+
+    *data_dir* (or, if ``None``, the ``FAZZON_DATA_DIR`` environment variable) is a
+    folder holding the pipeline's reference datasets.  If neither is set, the built-in
+    defaults are returned.  A folder that is set but lacks the files, or files with
+    missing columns / seasons / day types, raise an error rather than silently
+    falling back.
+    """
+    if data_dir is None:
+        data_dir = os.environ.get(DATA_DIR_ENV) or None
+    if data_dir is None:
+        return DEFAULT_SEASON_STATS, DEFAULT_DAY_TYPE_STATS
+
+    data_dir = Path(data_dir)
+    files = [data_dir / SEASON_STATS_FILE, data_dir / DAY_TYPE_STATS_FILE]
+    missing = [str(f) for f in files if not f.exists()]
+    if missing:
+        raise FileNotFoundError(f"Fazzon presence statistics not found: {missing} ({DATA_DIR_ENV}={data_dir})")
+
+    season_cols = list(DEFAULT_SEASON_STATS.columns)
+    day_cols = list(DEFAULT_DAY_TYPE_STATS.columns)
+    season_df = pd.read_parquet(files[0])
+    day_df = pd.read_parquet(files[1])
+    for name, df, cols in (("season", season_df, ["cluster_name", *season_cols]),
+                           ("day-type", day_df, ["season", "day_type", *day_cols])):
+        lacking = sorted(set(cols) - set(df.columns))
+        if lacking:
+            raise ValueError(f"Fazzon {name} statistics in {data_dir}: missing columns {lacking}")
+    season_df = season_df.set_index("cluster_name")[season_cols]
+    day_df = day_df.set_index(["season", "day_type"])[day_cols]
+
+    if set(season_df.index) != set(DEFAULT_SEASON_STATS.index):
+        raise ValueError(f"Fazzon season statistics: seasons {sorted(season_df.index)}, "
+                         f"expected {sorted(DEFAULT_SEASON_STATS.index)}")
+    if set(day_df.index) != set(DEFAULT_DAY_TYPE_STATS.index):
+        raise ValueError("Fazzon day-type statistics: (season, day_type) cells differ from the expected ones")
+    logger.info("Fazzon presence statistics loaded from %s", data_dir)
+    return season_df.loc[DEFAULT_SEASON_STATS.index], day_df.loc[DEFAULT_DAY_TYPE_STATS.index]
+
+
+season_stats, day_type_stats = load_presence_stats()
+
+# ---------------------------------------------------------------------------
 # CV weight dicts  — consumed by CategoricalIndex constructors in the model
 # ---------------------------------------------------------------------------
 
@@ -260,7 +329,7 @@ def make_presence_factories(
         var_total = within_cell_var(season)
 
     The day-type correction shifts only the **mean**; its variance is already
-    captured inside the within-cell residual variance.
+    captured inside the per-season variance.
 
     The distributions are **Gamma**, parameterised by the combined mean μ and
     variance σ²::
