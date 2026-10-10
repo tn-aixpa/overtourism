@@ -5,12 +5,12 @@ STEP 2 - Fazzon reference datasets.
 Input : <normalized>/fazzon/ tables (step 1)
 Output: <final>/fazzon/
   - fazzon_daily: one row per day, measured Fazzon data + access regime flags + predictors
-  - fazzon_presence_season_stats, fazzon_presence_day_type_stats: the presence statistics of
-    the Fazzon model (executor-backend/src/model/fazzon/fazzon_presence_stats.py), computed
-    from the data instead of hard-coded
+  - fazzon_presence_season_stats: the presence statistics of the Fazzon model
+    (executor-backend/src/model/fazzon/fazzon_presence_stats.py), per season
 
-`fazzon_daily` holds measured values only; assumptions (occupancy, non-car share, ...) are
-applied in the statistics, where they are documented.
+`fazzon_daily` holds measured values and the access rules of each day; assumptions
+(occupancy, non-car share, ...) are applied in the statistics. Every decision and
+assumption is listed in ASSUMPTIONS.md; the IDs in the comments below refer to it.
 """
 
 import logging
@@ -31,14 +31,22 @@ SHUTTLE_PERIODS = {
     "lakebus": (pd.Timestamp("2026-07-04"), pd.Timestamp("2026-08-30")),
 }
 REGULATED_PARKING = (pd.Timestamp("2026-07-04"), pd.Timestamp("2026-08-31"))
-SHUTTLE_NOT_RUNNING = pd.to_datetime(["2026-08-21"])  # bad weather all day, bus not active
-# Events that make the car count not comparable ("5days": >2000 people, extra meadows used
-# as parking, cars not counted).
+# D3: 21/08/2026, bad weather all day: shuttle not running, parking at 5 euro.
+SHUTTLE_NOT_RUNNING = pd.to_datetime(["2026-08-21"])
+REDUCED_PRICE_DAYS = {pd.Timestamp("2026-08-21"): 5.0}
+# D2: events that make the car count not comparable ("5days": >2000 people, extra meadows
+# used as parking, cars not counted).
 EVENT_DAYS = pd.to_datetime(["2026-07-02", "2026-07-03"])
 
+# Parking price per car (euro), on the days with Fazzon parking data.
+PRICE_2025 = 5.0  # 2025 rules (operator): 5 euro/day until the car park is full
+PRICE_2026_REGULATED = 20.0  # 2026 rules (operator) 04/07-31/08: 20 euro/day ...
+PRICE_2026_REGULATED_AFTERNOON = 10.0  # ... 10 euro for entries after 12:00
+PRICE_2026_UNREGULATED = 5.0  # A7: 2026 outside 04/07-31/08, ASSUMPTION (as 2025)
+
 # ------------------------------------------------------------------ predictors
-ROAD_UP_VALLEY_DIR = 2  # SS42 km increase downhill (Ossana -> Pellizzano -> Mezzana)
-ROAD_MORNING_HOURS = range(7, 12)
+ROAD_UP_VALLEY_DIR = 2  # A16: SS42 km increase downhill (Ossana -> Pellizzano -> Mezzana)
+ROAD_MORNING_HOURS = range(7, 12)  # A17
 ROAD_TOTAL_STATIONS = ("pellizzano", "pracorno", "celledizzo", "tonale", "revo")
 
 
@@ -91,6 +99,26 @@ def _fazzon_counts(parking: pd.DataFrame, parking_2025: pd.DataFrame, greenbus: 
     return fz
 
 
+def _add_parking_price(daily: pd.DataFrame, parking_days: pd.DatetimeIndex) -> None:
+    """``parking_price`` (full day) and ``parking_price_afternoon`` (entry after 12:00), euro per
+    car, on the days with Fazzon parking data; ``parking_price_assumed`` marks A7."""
+    d = daily.index.to_series()
+    season = d.isin(parking_days)
+    regulated = daily["regulated_parking"]
+    unregulated_2026 = season & (d.dt.year == 2026) & ~regulated
+    price = pd.Series(np.nan, index=daily.index)
+    price[season & (d.dt.year == 2025)] = PRICE_2025
+    price[season & regulated] = PRICE_2026_REGULATED
+    price[unregulated_2026] = PRICE_2026_UNREGULATED
+    afternoon = price.copy()
+    afternoon[season & regulated] = PRICE_2026_REGULATED_AFTERNOON
+    for day, reduced in REDUCED_PRICE_DAYS.items():  # D3
+        price[day] = afternoon[day] = reduced
+    daily["parking_price"] = price
+    daily["parking_price_afternoon"] = afternoon
+    daily["parking_price_assumed"] = unregulated_2026
+
+
 def build_fazzon_daily(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """One row per day from 2023-01-01 to the last day with any data."""
     fz = _fazzon_counts(tables["fazzon_parking"], tables["fazzon_parking_2025"], tables["fazzon_greenbus_2025"])
@@ -117,6 +145,7 @@ def build_fazzon_daily(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
         daily.loc[d.between(first, last) & ~d.isin(SHUTTLE_NOT_RUNNING), "shuttle"] = name
     daily["regulated_parking"] = d.between(*REGULATED_PARKING)
     daily["event_day"] = d.isin(EVENT_DAYS)
+    _add_parking_price(daily, parking_days=fz.index)
     daily["year"] = d.dt.year
     daily["month"] = d.dt.month
     daily["dow"] = d.dt.day_name().str.lower()
@@ -125,99 +154,56 @@ def build_fazzon_daily(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
 
 
 # ------------------------------------------------------------------ presence statistics
-# Calibration of the current model (fazzon_presence_stats.py), reproduced from the data.
-PERSONS_PER_CAR = 2.83  # NetMobility 2021 field study
-NON_CAR_SHARE = 0.31  # 2022 EETRA survey; ASSUMPTION for the non-car visitors
-OTHER_STD_REL = 0.50  # ASSUMPTION: relative SD of non-car visitors
-CALIBRATION_YEAR = 2025
-# 28/08/2025 (27 cars) is left out of the model calibration: the hard-coded statistics
-# (August n=30, 81 days) are reproduced only without it. Reason not documented.
-CALIBRATION_EXCLUDED_DAYS = pd.to_datetime(["2025-08-28"])
-SEASONS = {6: "june", 7: "july", 8: "august", 9: "september"}
-# Days counted as "peak" per season; the others are "base". June and September are an
-# ASSUMPTION (conventional weekend, zero correction: too few days to calibrate).
-DAY_TYPE_PEAK = {
-    "june": ["saturday", "sunday"],
-    "july": ["sunday"],
-    "august": ["monday", "tuesday"],
-    "september": ["saturday", "sunday"],
-}
-CALIBRATED_DAY_TYPE_SEASONS = ("july", "august")
+PERSONS_PER_CAR = 2.83  # A1: NetMobility 2021 field study
+NON_CAR_SHARE = 0.31  # A3: 2022 EETRA survey, non-car share of visitors (to be replaced)
+OTHER_STD_REL = 0.50  # A4: relative SD of non-car visitors (to be replaced)
+CALIBRATION_YEAR = 2025  # D9: calibration on the 2025 parking data (D4: all days included)
+SEASONS = {6: "june", 7: "july", 8: "august", 9: "september"}  # D9
+# D5: no day-type (weekday) split: no evidence of a weekday effect.
 
 
-def build_presence_stats(daily: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Season and day-type statistics in the layout of fazzon_presence_stats.py.
+def build_presence_stats(daily: pd.DataFrame) -> pd.DataFrame:
+    """Season statistics in the layout of fazzon_presence_stats.py.
 
-    Season: mean and SD of daily cars x PERSONS_PER_CAR (the SD is the plain per-season SD).
-    Non-car visitors = car visitors x NON_CAR_SHARE / (1 - NON_CAR_SHARE), SD = OTHER_STD_REL x mean.
-    Day type: peak correction = mean(peak days) - season mean; base correction chosen so that the
-    frequency-weighted mean correction is zero.
+    Car visitors: mean and SD of daily cars x PERSONS_PER_CAR (A1).
+    Non-car visitors: car visitors x NON_CAR_SHARE / (1 - NON_CAR_SHARE) (A3), SD =
+    OTHER_STD_REL x mean (A4).
     """
     other_ratio = NON_CAR_SHARE / (1.0 - NON_CAR_SHARE)
-    cal = daily[(daily["year"] == CALIBRATION_YEAR) & daily["cars"].notna()
-                & ~daily["date"].isin(CALIBRATION_EXCLUDED_DAYS)].copy()
+    cal = daily[(daily["year"] == CALIBRATION_YEAR) & daily["cars"].notna()].copy()
     cal["season"] = cal["month"].map(SEASONS)
     cal = cal.dropna(subset=["season"])
 
-    season_rows, day_rows = [], []
-    for season, g in cal.groupby("season", sort=False):
-        mean_cars, sd_cars = g["cars"].mean(), g["cars"].std()
-        mean_car = mean_cars * PERSONS_PER_CAR
-        season_rows.append({
+    rows = []
+    for season in [s for s in SEASONS.values() if s in set(cal["season"])]:
+        g = cal[cal["season"] == season]
+        mean_car = g["cars"].mean() * PERSONS_PER_CAR
+        rows.append({
             "cluster_name": season,
             "freq_rel": len(g) / len(cal),
             "mean_car_visitors": mean_car,
-            "std_car_visitors": sd_cars * PERSONS_PER_CAR,
+            "std_car_visitors": g["cars"].std() * PERSONS_PER_CAR,
             "mean_other_visitors": mean_car * other_ratio,
             "std_other_visitors": mean_car * other_ratio * OTHER_STD_REL,
             "n_days": len(g),
         })
-        peak_days = DAY_TYPE_PEAK[season]
-        f_peak = len(peak_days) / 7.0
-        if season in CALIBRATED_DAY_TYPE_SEASONS:
-            peak_corr = (g.loc[g["dow"].isin(peak_days), "cars"].mean() - mean_cars) * PERSONS_PER_CAR
-        else:
-            peak_corr = 0.0
-        base_corr = -peak_corr * f_peak / (1.0 - f_peak)
-        for day_type, freq, corr in (("peak", f_peak, peak_corr), ("base", 1.0 - f_peak, base_corr)):
-            day_rows.append({
-                "season": season, "day_type": day_type, "freq_rel": freq,
-                "mean_car_visitors": corr, "mean_other_visitors": corr * other_ratio,
-                "days": ",".join(peak_days if day_type == "peak" else
-                                 [d for d in ("monday", "tuesday", "wednesday", "thursday", "friday",
-                                              "saturday", "sunday") if d not in peak_days]),
-            })
-
-    order = [s for s in SEASONS.values() if s in set(cal["season"])]
-    season_stats = pd.DataFrame(season_rows).set_index("cluster_name").loc[order].reset_index()
-    day_type_stats = pd.DataFrame(day_rows)
-    day_type_stats["season"] = pd.Categorical(day_type_stats["season"], order, ordered=True)
-    day_type_stats = day_type_stats.sort_values(["season", "day_type"], ascending=[True, False])
-    day_type_stats["season"] = day_type_stats["season"].astype(str)
-    for df in (season_stats, day_type_stats):
-        df.insert(0, "calibration", f"parking_{CALIBRATION_YEAR}")
-    return season_stats, day_type_stats.reset_index(drop=True)
+    stats = pd.DataFrame(rows)
+    stats.insert(0, "calibration", f"parking_{CALIBRATION_YEAR}")
+    return stats
 
 
 def build_all(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     daily = build_fazzon_daily(tables)
-    season_stats, day_type_stats = build_presence_stats(daily)
-    _check(daily, season_stats, day_type_stats)
-    return {
-        "fazzon_daily": daily,
-        "fazzon_presence_season_stats": season_stats,
-        "fazzon_presence_day_type_stats": day_type_stats,
-    }
+    season_stats = build_presence_stats(daily)
+    _check(daily, season_stats)
+    return {"fazzon_daily": daily, "fazzon_presence_season_stats": season_stats}
 
 
-def _check(daily: pd.DataFrame, season_stats: pd.DataFrame, day_type_stats: pd.DataFrame) -> None:
+def _check(daily: pd.DataFrame, season_stats: pd.DataFrame) -> None:
     if daily["date"].duplicated().any():
         raise ValueError("fazzon_daily: duplicated dates")
     if not np.isclose(season_stats["freq_rel"].sum(), 1.0):
         raise ValueError("season freq_rel does not sum to 1")
-    weighted = (day_type_stats["freq_rel"] * day_type_stats["mean_car_visitors"]).groupby(day_type_stats["season"]).sum()
-    if not np.allclose(weighted, 0.0):
-        raise ValueError(f"day-type corrections are not zero-mean: {weighted.to_dict()}")
     for year in (2025, 2026):
         n = daily.loc[daily["year"] == year, "cars"].notna().sum()
         logger.info("fazzon_daily: %d days with Fazzon car counts in %d", n, year)

@@ -31,7 +31,7 @@ _PARKING_COLUMNS = [
     "moto_persons_2026", "_p_tot_2026", "note_2026", "note2_2026",
 ]
 
-# The Greenbus 2025 pilot ran 28/06-20/07/2025; the later rows of the summary refer to
+# D1: the Greenbus 2025 pilot ran 28/06-20/07/2025; the later rows of the summary refer to
 # another area (confirmed by the operator) and are flagged, not dropped.
 GREENBUS_LAST_DAY = pd.Timestamp("2025-07-20")
 
@@ -39,7 +39,7 @@ GREENBUS_LAST_DAY = pd.Timestamp("2025-07-20")
 def standardize_parking(path) -> pd.DataFrame:
     """Operator spreadsheet, 2025 and 2026 side by side -> one row per day.
 
-    `bus_up`: "N° persone bus" (people going up); `bus_down`: people coming down, written
+    `bus_up`: "N° persone bus" (people going up, A5); `bus_down`: people coming down, written
     as text ("301 (discesa)") in the note column from 01/08/2026. The sheet's own person
     totals are not read (inconsistent formulas, OPEN_QUESTIONS.md point 7).
     """
@@ -104,7 +104,7 @@ def standardize_greenbus_2025(path) -> pd.DataFrame:
 
 # ------------------------------------------------------------------ road counts
 ROAD_CAR_CLASSES = (2, 3)  # autovetture e monovolumi, also with trailer
-ROAD_MIN_DAILY_CARS = 50  # below this per direction the sensor is considered off
+ROAD_MIN_DAILY_CARS = 50  # D10: below this per direction the sensor is considered off
 
 
 def standardize_road_counts(path, stations: pd.DataFrame) -> pd.DataFrame:
@@ -145,7 +145,7 @@ def standardize_road_counts(path, stations: pd.DataFrame) -> pd.DataFrame:
 def road_counts_daily(hourly: pd.DataFrame) -> pd.DataFrame:
     """Cars per station / date / direction, with `valid`.
 
-    Valid = at least 23 hours present and at least ROAD_MIN_DAILY_CARS cars: several sensors
+    D10: valid = at least 23 hours present and at least ROAD_MIN_DAILY_CARS cars: several sensors
     keep reporting zeros for months (Dimaro from mid-2024, Tonale in 2022, Croviana direction 2
     most of the time); those zeros are missing data, not empty roads.
     """
@@ -160,7 +160,7 @@ def road_counts_daily(hourly: pd.DataFrame) -> pd.DataFrame:
 
 # ------------------------------------------------------------------ weather
 def standardize_meteo_station(path) -> pd.DataFrame:
-    """Meteotrentino station series (data_download/download_meteo_meteotrentino.py) -> date, tmin,
+    """D11: Meteotrentino station series (data_download/download_meteo_meteotrentino.py) -> date, tmin,
     tmax, rain_mm, quality code (as delivered; the codes are not documented: 145 from 2024, 1 in
     2023, 81 on 4 days of 2023)."""
     out = pd.read_csv(path)
@@ -190,7 +190,7 @@ VODAFONE_LOCATIONS = {
     "104": "apt_valdisole",
     "22": "provincia_trentino",
 }
-VODAFONE_PROFILES = ("TOURIST", "VISITOR")  # excludes INHABITANT / COMMUTER
+VODAFONE_PROFILES = ("TOURIST", "VISITOR")  # D12: excludes INHABITANT / COMMUTER
 
 
 def _read_vodafone(path, columns) -> pd.DataFrame:
@@ -205,7 +205,7 @@ def _read_vodafone(path, columns) -> pd.DataFrame:
 
 
 def standardize_vodafone(path_attendences, path_str) -> pd.DataFrame:
-    """Daily presences per Val di Sole area: Italian visitors (``userCountry == "ITA"``) plus the
+    """D12: daily presences per Val di Sole area: Italian visitors (``userCountry == "ITA"``) plus the
     pre-aggregated foreign total (``*_STR``) rather than single nationalities, which are masked
     to 0 below the privacy threshold of 15."""
     att = _read_vodafone(path_attendences, ["date", "locId", "userCountry", "userProfile", "value"])

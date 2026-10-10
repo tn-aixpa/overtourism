@@ -33,16 +33,17 @@ python -m model.fazzon.analyze_new_data         # exploratory analysis and plots
   (from `reference/stations.csv`).
 * **Reference datasets**:
   * `fazzon_daily`: one row per day from 2023-01-01: measured Fazzon data (cars, bus, motorbikes),
-    access regime flags (`shuttle`, `regulated_parking`, `event_day`), weather and predictors
-    (road counts, Vodafone, bikes, Guest Card).
-  * `fazzon_presence_season_stats`, `fazzon_presence_day_type_stats`: the presence statistics of
-    `executor-backend/src/model/fazzon/fazzon_presence_stats.py`, computed from `fazzon_daily`
-    with the same method and assumptions (2025 parking x 2.83 people/car, non-car share 0.31).
+    access rules (`shuttle`, `regulated_parking`, `event_day`, `parking_price`,
+    `parking_price_afternoon`, `parking_price_assumed`), weather and predictors (road counts,
+    Vodafone, bikes, Guest Card).
+  * `fazzon_presence_season_stats`: the presence statistics of the Fazzon model, per season
+    (2025 parking x 2.83 people/car, non-car share 0.31).
 
 The Fazzon model (`executor-backend/src/model/fazzon/`) reads the two statistics files from its
 data folder (`FAZZON_DATA_DIR`, e.g. `<repo>/data_preparation/Output/data/final_data/fazzon` for a
 local run), or downloads them from the platform at startup; it has no built-in values. See
 `executor-backend/src/model/fazzon/fazzon_data.py` and `docs/howto/backend.md` (Model API data).
 
-Assumptions and data questions still open with the domain experts: `OPEN_QUESTIONS.md`.
+Every decision and assumption, with its evidence and where it is used: `ASSUMPTIONS.md` (the
+code refers to its IDs). Questions still open with the domain experts: `OPEN_QUESTIONS.md`.
 Tests: `tests/test_fazzon_pipeline.py` (synthetic fixtures, no data needed).

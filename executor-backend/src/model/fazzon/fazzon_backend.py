@@ -48,7 +48,6 @@ class FazzonBackend:
         "parking": "Parcheggi",
         "road": "Viabilità",
         "food": "Ristorazione",
-        "lakeside": "Lungolago",
     }
     X_AXIS_NAME = "Visitatori in auto / giorno"
     Y_AXIS_NAME = "Visitatori non-auto / giorno"
@@ -68,7 +67,7 @@ class FazzonBackend:
         self._c_max, self._o_max = 2000, 1000
         self._c_sample, self._o_sample = 100, 100
         self._config = OvertourismEvaluationConfig(
-            ensemble_size=8,  # 4 seasons x 2 day_types
+            ensemble_size=4,  # 4 seasons (no day-type split, D5)
             ensemble_seed=0,
             n_samples_per_combo=10,
             sample_seed=1,
@@ -167,14 +166,6 @@ class FazzonBackend:
                 category="Contesto",
                 support=list(inp.cv_season.support),
             ),
-            inp.cv_day_type.name: OvertourismParameterMeta(
-                name=inp.cv_day_type.name,
-                kind="categorical",
-                label="Tipo di giorno",
-                description="Picco = domeniche di luglio e lun/mar di agosto.  Base = tutti gli altri giorni.",
-                category="Contesto",
-                support=list(inp.cv_day_type.support),
-            ),
             inp.i_c_parking.name: OvertourismParameterMeta(
                 name=inp.i_c_parking.name,
                 kind="distribution",
@@ -191,23 +182,6 @@ class FazzonBackend:
                 step=10.0,
                 distribution_family="triang",
                 distribution_fixed_params={"c": 0.5},
-            ),
-            inp.i_c_lakeside.name: OvertourismParameterMeta(
-                name=inp.i_c_lakeside.name,
-                kind="distribution",
-                label="Capacità lago (persone simultanee)",
-                description=(
-                    "Range [min, max] della soglia di capacità del lungolago. "
-                    "ASSUNZIONE — non validata con esperti (Domanda aperta #13)."
-                ),
-                unit="persone",
-                category="Capacità",
-                default_range=(400.0, 800.0),
-                min_value=100.0,
-                max_value=1200.0,
-                step=50.0,
-                distribution_family="uniform",
-                distribution_fixed_params={},
             ),
         }
 

@@ -27,13 +27,12 @@ necessary to specify the project from which the data items and artefacts should 
 
 ### Model API data
 
-The Model API also needs data on startup: the Fazzon model reads its presence statistics, the dataitems
-`fazzon_presence_season_stats.parquet` and `fazzon_presence_day_type_stats.parquet` produced by the Fazzon
-data-preparation pipeline (`data_preparation/model/fazzon`). It has no built-in values: **the Model API does not
+The Model API also needs data on startup: the Fazzon model reads its presence statistics, the dataitem
+`fazzon_presence_season_stats.parquet` produced by the Fazzon data-preparation pipeline (`data_preparation/model/fazzon`). It has no built-in values: **the Model API does not
 start without them**. The same variables as above apply, set on the Model API:
 
-- `DT_OVERTURISM_STANDALONE_MODE=true` (default): the files must already be in the data folder.
-- `DT_OVERTURISM_STANDALONE_MODE=false`: the files are downloaded from the platform project `PROJECT_NAME` at
+- `DT_OVERTURISM_STANDALONE_MODE=true` (default): the file must already be in the data folder.
+- `DT_OVERTURISM_STANDALONE_MODE=false`: the file is downloaded from the platform project `PROJECT_NAME` at
   startup (platform credentials needed, as for the CRUD API), unless they are already in the data folder.
 
 The data folder is `FAZZON_DATA_DIR`, or `executor-backend/database/fazzon` if unset. A failed download stops

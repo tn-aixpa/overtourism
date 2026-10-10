@@ -291,7 +291,6 @@ def test_get_fazzon_schema_returns_fazzon_frontend_metadata() -> None:
             "parking": "Parcheggi",
             "road": "Viabilità",
             "food": "Ristorazione",
-            "lakeside": "Lungolago",
         },
         "color_map": [
             [0.0, "rgb(5, 102, 8)"],
@@ -311,7 +310,6 @@ def test_get_fazzon_schema_returns_fazzon_frontend_metadata() -> None:
             "constraint level parking": "Sostenibilità Parcheggi",
             "constraint level road": "Sostenibilità Viabilità",
             "constraint level food": "Sostenibilità Ristorazione",
-            "constraint level lakeside": "Sostenibilità Lungolago",
             "critical constraint": "Vincolo Critico",
         },
         "plot_mapper": {

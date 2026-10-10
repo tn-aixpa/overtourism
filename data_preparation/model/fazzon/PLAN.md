@@ -89,7 +89,11 @@ Tasks:
 - [x] 3.3 Replace the hard-coded tables in `fazzon_presence_stats.py` with the loader; keep the
       same interface (`season_stats`, `day_type_stats`, `make_presence_factories`). The hard-coded
       tables stay as `DEFAULT_*` (fallback); their comments fixed (per-season SD, 28/08 left out).
-- [ ] 3.4 Model content updates enabled by the new data (each needs a decision):
+- [~] 3.4 Model content updates enabled by the new data (decisions in `ASSUMPTIONS.md`).
+      Done: register; 28/08/2025 included (D4); weekday split dropped (D5); lakeside dropped
+      (D6); daily parking price in `fazzon_daily` (A7, D3). Next: weather category (D7), modal-
+      shift estimation (D8), then the model's visitor numbers on top of it (replacing A3, A4).
+      Original list:
       - non-car visitors: 2026 bus counts are measured, so they replace the 0.31 ASSUMPTION
         for the shuttle part
       - regime: separate stats for "no regime" (2025) and "2026 regime" (pricing + cap + shuttle),
@@ -121,6 +125,9 @@ Tasks:
 - [ ] 5.4 Inform the backend developers of the Model API changes (3.2): the Model API needs the
       Fazzon data to start, new endpoint `POST /models/{model_key}/download-data` to wrap with
       admin authentication in the CRUD API, `digitalhub` dependency in `executor-backend`.
+      Also (3.4): the Fazzon schema no longer has the `day_type` category nor the lakeside
+      capacity, and the `lakeside` constraint is gone from the metadata (`mapper`, KPIs);
+      the data is one dataitem (`fazzon_presence_season_stats.parquet`).
 
 ## Dependencies
 

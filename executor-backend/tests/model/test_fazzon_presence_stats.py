@@ -10,15 +10,16 @@ from src.model.fazzon.fazzon_presence_stats import (
     make_presence_factories,
     presence_inputs,
 )
-from tests.conftest import DAY_TYPE_STATS, SEASON_STATS, write_fazzon_stats
+from tests.conftest import SEASON_STATS, write_fazzon_stats
 
 
-def test_reads_reference_datasets_from_data_dir():
-    season, day_type = load_presence_stats()
+def test_reads_reference_dataset_from_data_dir():
+    season = load_presence_stats()
     assert list(season.index) == ["june", "july", "august", "september"]
-    assert season.loc["august", "mean_car_visitors"] == 790.4
-    car, _ = make_presence_factories(season, day_type)
-    assert car("peak", "august").mean() == pytest.approx(790.4 + 112.0)
+    assert season.loc["august", "mean_car_visitors"] == 767.4
+    car, other = make_presence_factories(season)
+    assert car("august").mean() == pytest.approx(767.4)
+    assert other("july").std() == pytest.approx(111.9)
 
 
 def test_presence_inputs_reads_files_at_every_call(tmp_path, monkeypatch):
@@ -26,13 +27,12 @@ def test_presence_inputs_reads_files_at_every_call(tmp_path, monkeypatch):
     season.loc[season["cluster_name"] == "july", "mean_car_visitors"] = 1000.0
     write_fazzon_stats(tmp_path, season=season)
     monkeypatch.setenv(fazzon_data.DATA_DIR_ENV, str(tmp_path))
-    weights, day_type, car, _ = presence_inputs()
-    assert weights["july"] == pytest.approx(31 / 81)
-    assert day_type == {"peak": 2 / 7, "base": 5 / 7}
-    assert car("base", "july").mean() == pytest.approx(1000.0 - 26.2)
+    weights, car, _ = presence_inputs()
+    assert weights["july"] == pytest.approx(31 / 82)
+    assert car("july").mean() == pytest.approx(1000.0)
 
 
-def test_missing_files_raise(tmp_path):
+def test_missing_file_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_presence_stats(tmp_path)
 
@@ -43,8 +43,8 @@ def test_missing_season_raises(tmp_path):
         load_presence_stats(tmp_path)
 
 
-def test_missing_day_type_column_raises(tmp_path):
-    write_fazzon_stats(tmp_path, day_type=DAY_TYPE_STATS.drop(columns="mean_other_visitors"))
+def test_missing_column_raises(tmp_path):
+    write_fazzon_stats(tmp_path, season=SEASON_STATS.drop(columns="mean_other_visitors"))
     with pytest.raises(ValueError, match="missing columns"):
         load_presence_stats(tmp_path)
 
@@ -79,8 +79,8 @@ def test_download_replaces_files(tmp_path, monkeypatch):
     _fake_digitalhub(monkeypatch, source_dir=source)
 
     assert fazzon_data.download_fazzon_data(overwrite=True) == target
-    season, _ = load_presence_stats(target)
-    assert season.loc["august", "mean_car_visitors"] == pytest.approx(791.4)
+    season = load_presence_stats(target)
+    assert season.loc["august", "mean_car_visitors"] == pytest.approx(768.4)
 
 
 def test_download_skipped_when_files_present(tmp_path, monkeypatch):

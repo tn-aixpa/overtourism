@@ -86,7 +86,7 @@ FAZZON_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = FAZZON_DIR / "data" / "new" / "analysis_output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-PERSONS_PER_CAR = 2.83  # NetMobility 2021 field study, vedi fazzon_presence_stats.py
+PERSONS_PER_CAR = 2.83  # A1: NetMobility 2021 field study
 
 # Regime 2026 (definito in reference_datasets.py): parcheggio a pagamento con
 # semaforo e prenotazione dal 4/7 al 31/8, navetta Lakebus dal 4/7 al 30/8.
@@ -98,11 +98,11 @@ EXCLUDED_DAYS_2026 = EVENT_DAYS.union(SHUTTLE_NOT_RUNNING)
 # Persone per auto secondo il gestore (OPEN_QUESTIONS.md, punto 4): ~2,5 senza
 # regime (2025, e 2026 fuori dal periodo regolato); ~3,5 con il regime 2026,
 # perche' con parcheggio a 20 euro "si sale solo con l'auto piena".
-OCCUPANCY_NO_REGIME = 2.5
-OCCUPANCY_REGIME_2026 = 3.5
+OCCUPANCY_NO_REGIME = 2.5  # A2
+OCCUPANCY_REGIME_2026 = 3.5  # A2
 
 # Meteo: stazione Meteotrentino di Male' (T0074), misure giornaliere.
-RAINY_DAY_MM = 1.0  # soglia climatologica standard di "giorno piovoso"
+RAINY_DAY_MM = 1.0  # A18: soglia climatologica standard di "giorno piovoso"
 
 BIKE_SENSOR_SHORT_NAMES = {  # etichette per la mappa
     "LLWW78M8": "Laghetti S. Leonardo", "GLWB8Q97": "Fucine di Ossana", "TFXV3R06": "Salèt (Pellizzano)",

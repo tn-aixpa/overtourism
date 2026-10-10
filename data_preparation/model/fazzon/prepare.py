@@ -41,7 +41,7 @@ def read_normalized(normalized_dir=FAZZON_NORMALIZED_DIR) -> dict[str, pd.DataFr
 
 
 def read_reference(final_dir=FAZZON_FINAL_DIR) -> dict[str, pd.DataFrame]:
-    names = ("fazzon_daily", "fazzon_presence_season_stats", "fazzon_presence_day_type_stats")
+    names = ("fazzon_daily", "fazzon_presence_season_stats")
     return {name: pd.read_parquet(final_dir / f"{name}.parquet") for name in names}
 
 

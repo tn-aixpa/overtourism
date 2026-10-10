@@ -4,7 +4,6 @@ import pytest
 
 from model.fazzon.config import load_config
 from model.fazzon.reference_datasets import (
-    CALIBRATION_EXCLUDED_DAYS,
     PERSONS_PER_CAR,
     build_fazzon_daily,
     build_presence_stats,
@@ -107,19 +106,24 @@ def _tables_for_daily(cars_by_date: dict[str, float]) -> dict[str, pd.DataFrame]
     }
 
 
-def test_presence_stats_reproduce_method():
-    # July 2025: Sundays 300 cars, other days 100; one excluded August day must be ignored
-    july = pd.date_range("2025-07-01", "2025-07-31")
-    cars = {str(d.date()): (300.0 if d.dayofweek == 6 else 100.0) for d in july}
-    cars.update({str(d.date()): 200.0 for d in pd.date_range("2025-08-01", "2025-08-31")})
-    cars[str(CALIBRATION_EXCLUDED_DAYS[0].date())] = 10_000.0
-    daily = build_fazzon_daily(_tables_for_daily(cars))
-    season, day_type = build_presence_stats(daily)
-    season = season.set_index("cluster_name")
-    assert season.loc["august", "n_days"] == 30
-    assert season.loc["august", "mean_car_visitors"] == pytest.approx(200 * PERSONS_PER_CAR)
-    july_mean = np.mean(list(cars[str(d.date())] for d in july))
-    peak = day_type.set_index(["season", "day_type"]).loc[("july", "peak"), "mean_car_visitors"]
-    assert peak == pytest.approx((300 - july_mean) * PERSONS_PER_CAR)
-    weighted = (day_type["freq_rel"] * day_type["mean_car_visitors"]).groupby(day_type["season"]).sum()
-    assert np.allclose(weighted, 0.0)
+def test_presence_stats_per_season():
+    july = {str(d.date()): (300.0 if d.dayofweek == 6 else 100.0) for d in pd.date_range("2025-07-01", "2025-07-31")}
+    august = {str(d.date()): 200.0 for d in pd.date_range("2025-08-01", "2025-08-31")}
+    august["2025-08-28"] = 27.0  # D4: bad-weather days are part of the calibration
+    daily = build_fazzon_daily(_tables_for_daily({**july, **august}))
+    stats = build_presence_stats(daily).set_index("cluster_name")
+    assert list(stats.index) == ["july", "august"]
+    assert stats.loc["august", "n_days"] == 31
+    assert stats.loc["august", "mean_car_visitors"] == pytest.approx(np.mean(list(august.values())) * PERSONS_PER_CAR)
+    assert stats["freq_rel"].sum() == pytest.approx(1.0)
+    assert "day_type" not in stats.columns
+
+
+def test_parking_price_per_day():
+    days = ["2025-07-10", "2026-06-30", "2026-07-10", "2026-08-21", "2026-09-05"]
+    daily = build_fazzon_daily(_tables_for_daily({d: 100.0 for d in days})).set_index("date")
+    price = daily.loc[pd.to_datetime(days), ["parking_price", "parking_price_afternoon", "parking_price_assumed"]]
+    assert price["parking_price"].tolist() == [5.0, 5.0, 20.0, 5.0, 5.0]
+    assert price["parking_price_afternoon"].tolist() == [5.0, 5.0, 10.0, 5.0, 5.0]
+    assert price["parking_price_assumed"].tolist() == [False, True, False, False, True]
+    assert np.isnan(daily.loc["2026-07-11", "parking_price"])  # no parking data that day

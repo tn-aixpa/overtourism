@@ -1,0 +1,51 @@
+# Fazzon: register of decisions and assumptions
+
+Every modelling decision (`D*`) and assumption (`A*`) of the Fazzon data-preparation pipeline
+and of the Fazzon model, with its evidence and the places where it is used. The code refers to
+these IDs in comments; a value without an ID is a bug. Questions for the domain experts are in
+`OPEN_QUESTIONS.md` (`OQ*` below).
+
+Status: **in use** · **to validate** (in use, waiting for the domain experts) · **planned** ·
+**to be replaced** (in use until a planned change lands) · **retired**.
+
+Paths: `pipeline/` = `data_preparation/model/fazzon/`, `model/` = `executor-backend/src/model/fazzon/`.
+
+## Decisions
+
+| ID | Decision | Evidence / reason | Used in | Status |
+|----|----------|-------------------|---------|--------|
+| D1 | The Greenbus 2025 rows after 20/07/2025 refer to another area: flagged `other_area`, not used. | Confirmed by the operator; the pilot ran 28/06–20/07/2025. | `pipeline/standardize.py` (`GREENBUS_LAST_DAY`), `reference_datasets.py` | in use |
+| D2 | 2026 event days (02–03/07/2026, "5days": >2000 people, extra meadows used as parking, cars not counted) are excluded from comparisons. | Operator notes in the parking sheet. | `pipeline/reference_datasets.py` (`EVENT_DAYS`) | in use |
+| D3 | 21/08/2026 is a special day: bad weather all day, shuttle not running, parking at 5 euro. | Operator notes in the parking sheet. | `pipeline/reference_datasets.py` (`SHUTTLE_NOT_RUNNING`, `REDUCED_PRICE_DAYS`) | in use |
+| D4 | 28/08/2025 (27 cars) is part of the calibration. | Real bad-weather day, not a data error: 34.2 mm rain, tmax 18.6 °C, low road traffic at Pellizzano (1241 cars up 7–12 vs ~1750 the days before). Previously left out without a documented reason. | `pipeline/reference_datasets.py` (`build_presence_stats`) | in use |
+| D5 | No day-type (weekday) split in the presence statistics and in the model. | No evidence of a weekday effect: ANOVA on within-month deviations p = 0.42 (2025), 0.53 (2026); the former peak buckets: July Sundays p = 0.22 (2025, n = 4), 0.06 (2026); August Mon+Tue p = 0.10 (2025), 0.09 (2026). | `pipeline/reference_datasets.py`; `model/fazzon_model.py` (no `cv_day_type`) | in use |
+| D6 | The lakeside constraint is dropped from the model. | Its capacity (uniform 400–800 people) was never validated with the domain experts, and it dominated the overall sustainability field. | `model/fazzon_model.py`, `fazzon_backend.py` | in use |
+| D7 | Weather becomes a model category (e.g. good / bad day). | 2025: within-month R² 0.50 of cars on tmax + rain; rainy days −48 cars vs +17 on dry days. | — | planned |
+| D8 | Modal shift: an explicit behaviour model (car share as a parametric, e.g. exponential, function of the parking cost per person; split of the non-car visitors among shuttle / walk / elsewhere), estimated on the data with bootstrap uncertainty; no ML. It replaces A3 and A4. | Only two price levels (5, 20 euro) and a 2026 change that bundles price, shuttle, booking and traffic light: a flexible model cannot separate them nor extrapolate to new prices. | — | planned |
+| D9 | Presence statistics calibrated on the 2025 parking data; seasons = calendar months June–September. | 2025 is the only season without access regulation. | `pipeline/reference_datasets.py` (`CALIBRATION_YEAR`, `SEASONS`) | in use |
+| D10 | Road counts: a station/day/direction is valid with ≥ 23 hours and ≥ 50 cars; zero readings are missing data. | Several sensors report zeros for months (Dimaro from mid-2024, Tonale 2022, Croviana direction 2). | `pipeline/standardize.py` (`road_counts_daily`) | in use |
+| D11 | Weather from the Meteotrentino station T0074 (Male', measured), not from the per-comune bulletin. | Bulletin values are rounded and its rain does not match the station (r = 0.67; 188 vs 114 rainy days in 2025); station rain predicts Fazzon cars better (within-month R² 0.26 vs 0.05). | `data_preparation/data_download/download_meteo_meteotrentino.py`, `pipeline/standardize.py` | in use |
+| D12 | Vodafone presences = TOURIST + VISITOR profiles, Italians (`ITA`) plus the aggregated foreign total (`_STR`). | Single foreign nationalities are masked to 0 below 15 (privacy threshold). | `pipeline/standardize.py` (`standardize_vodafone`) | in use |
+
+## Assumptions
+
+| ID | Assumption | Value | Source | Used in | Status |
+|----|------------|-------|--------|---------|--------|
+| A1 | Persons per car | 2.83 | NetMobility 2021 field study | `pipeline/reference_datasets.py` (`PERSONS_PER_CAR`); `model/fazzon_model.py` (`i_xa_persons_per_car`) | to validate (OQ4: operator says ~2.5 in 2025, ~3.5 with the 2026 rules) |
+| A2 | Persons per car by regime | 2.5 without the 2026 rules, 3.5 with them | Operator, parking sheet note | `pipeline/analyze_new_data.py` (2025 vs 2026 comparison) | to validate (OQ4) |
+| A3 | Non-car share of visitors | 0.31 (car share 0.69) | 2022 EETRA survey | `pipeline/reference_datasets.py` (`NON_CAR_SHARE`); `model/fazzon_model.py` (`i_car_mode_share`) | to be replaced (D8) |
+| A4 | SD of non-car visitors | 50 % of the mean | none (synthetic) | `pipeline/reference_datasets.py` (`OTHER_STD_REL`) | to be replaced (D8) |
+| A5 | "N° persone bus" in the parking sheet = people going up | — | Operator sheet | `pipeline/standardize.py` (`bus_up`) | to validate (OQ2) |
+| A6 | People coming down by bus but not going up by bus walked up | bus_down − bus_up ≥ walkers | Working hypothesis | (D8, planned) | to validate (OQ1) |
+| A7 | 2026 parking price outside 04/07–31/08 | 5 euro/day, as in 2025 | none | `pipeline/reference_datasets.py` (`PRICE_2026_UNREGULATED`, `parking_price_assumed`) | to validate (OQ10) |
+| A8 | Parking occupancy ratio (simultaneous / daily cars) | 0.555 (dwell 4.44 h / 8 h) | 2021 calibration | `model/fazzon_model.py` (`i_occupancy_ratio`) | in use |
+| A9 | Road passages per car | 2 (one round trip per day) | — | `model/fazzon_model.py` (`i_xo_road_trips`) | in use |
+| A10 | Share of visitors using the restaurants | 0.55 | 2022 EETRA survey (>50 %) | `model/fazzon_model.py` (`i_u_food_fraction`) | in use |
+| A11 | Restaurant seat turnover | 2 sittings/seat/day | — | `model/fazzon_model.py` (`i_xo_food_sittings`) | in use |
+| A12 | Parking capacity (simultaneous cars) | triangular [150, 250], mode 200 | Policy cap 150 + whitelist/enforcement uncertainty | `model/fazzon_model.py` (`i_c_parking`) | in use |
+| A13 | Road capacity under semaphore control | uniform [800, 1400] passages/day | 2025 peak 422 cars × 2 = 844 passages without saturation | `model/fazzon_model.py` (`i_c_road`) | in use |
+| A14 | Season weights = share of the 2025 days with parking data per season | 3, 31, 31, 17 of 82 days | 2025 parking data | `pipeline/reference_datasets.py` (`freq_rel`); `model/fazzon_model.py` (`cv_season`) | in use; note: the June weight reflects the season start (28/06), not June demand |
+| A15 | Restaurant seats | 520 (4 venues) | `ristoranti_posti_a_sedere.csv` | `model/fazzon_model.py` (`i_c_seats`) | in use (data) |
+| A16 | Pellizzano road counter (station 110): direction 2 = up valley, below the Fazzon turn-off | — | Confirmed by the user (SS42 km increase downhill) | `pipeline/reference_datasets.py` (`ROAD_UP_VALLEY_DIR`) | in use (confirmed) |
+| A17 | Demand proxy: cars up valley at Pellizzano 07:00–11:59 | — | Best within-month correlation with Fazzon cars (R² 0.71) | `pipeline/reference_datasets.py` (`ROAD_MORNING_HOURS`) | in use |
+| A18 | Rainy day | rain ≥ 1 mm | Standard climatological threshold | `pipeline/analyze_new_data.py` (`RAINY_DAY_MM`); D7 | in use |

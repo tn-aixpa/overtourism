@@ -35,6 +35,9 @@ Quando una domanda viene chiusa, aggiornare la risposta qui e il codice corrispo
    23/7 e 13/8 omettono moto o mezza giornata; 27/8 ripete il totale del
    26/8). L'analisi ricalcola i totali; segnalarlo a chi gestisce il foglio.
 
+10. **Tariffa parcheggio 2026 fuori dal periodo regolato** (prima del 4/7 e
+    dopo il 31/8): assunta 5 € come nel 2025 (`ASSUMPTIONS.md`, A7). È corretto?
+
 ## Dati da richiedere
 
 8. **Conteggi traffico PAT 2026** (stessa esportazione, almeno stazioni 110
