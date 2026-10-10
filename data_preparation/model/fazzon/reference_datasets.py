@@ -255,7 +255,15 @@ def build_all(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     daily = build_fazzon_daily(tables)
     stats = build_presence_stats(daily)
     _check(daily, stats)
-    return {"fazzon_daily": daily, "fazzon_presence_stats": stats}
+    from model.fazzon.modal_shift import estimate_modal_shift  # step 2b, uses the stats above
+
+    modal_shift, modal_shift_days = estimate_modal_shift(daily, stats)
+    return {
+        "fazzon_daily": daily,
+        "fazzon_presence_stats": stats,
+        "fazzon_modal_shift": modal_shift,
+        "fazzon_modal_shift_daily": modal_shift_days,
+    }
 
 
 def _check(daily: pd.DataFrame, stats: pd.DataFrame) -> None:

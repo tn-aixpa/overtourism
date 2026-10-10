@@ -92,8 +92,8 @@ Tasks:
 - [~] 3.4 Model content updates enabled by the new data (decisions in `ASSUMPTIONS.md`).
       Done: register; 28/08/2025 included (D4); weekday split dropped (D5); lakeside dropped
       (D6); daily parking price in `fazzon_daily` (A7, D3); weather category good / cool / rainy
-      (D7, D13, A19–A21). Next: modal-shift estimation (D8), then the model's visitor numbers
-      on top of it (replacing A3, A4).
+      (D7, D13, A19–A21); modal-shift estimation (D8, A22–A25, `fazzon_modal_shift`). Next:
+      review of the estimates, then the model's visitor numbers on top of it (replacing A3, A4).
       Original list:
       - non-car visitors: 2026 bus counts are measured, so they replace the 0.31 ASSUMPTION
         for the shuttle part

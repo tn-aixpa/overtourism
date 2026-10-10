@@ -158,3 +158,34 @@ def test_parking_price_per_day():
     assert price["parking_price_afternoon"].tolist() == [5.0, 5.0, 10.0, 5.0, 5.0]
     assert price["parking_price_assumed"].tolist() == [False, True, False, False, True]
     assert np.isnan(daily.loc["2026-07-11", "parking_price"])  # no parking data that day
+
+
+def test_modal_shift_recovers_known_response():
+    from model.fazzon.modal_shift import estimate_modal_shift
+
+    stats = pd.DataFrame({
+        "season": ["july", "august", "september"], "weather": ["good"] * 3,
+        "mean_car_visitors": [100 * PERSONS_PER_CAR, 200 * PERSONS_PER_CAR, 100 * PERSONS_PER_CAR],
+    })
+    beta = 0.1
+    rows = []
+    for day in pd.date_range("2026-07-04", "2026-08-30"):  # rules: 20 euro, shuttle
+        cars5 = 100.0 if day.month == 7 else 200.0
+        cars = cars5 * np.exp(-beta * 15)
+        rows.append({"date": day, "month": day.month, "cars": cars, "cars_full": cars, "cars_half": np.nan,
+                     "parking_price": 20.0, "parking_price_afternoon": 10.0, "regulated_parking": True,
+                     "shuttle": "lakebus", "bus_up": 50.0, "bus_down": 60.0})
+    for day in pd.date_range("2026-09-01", "2026-09-10"):  # 5 euro, no rules: year effect 1.2
+        rows.append({"date": day, "month": 9, "cars": 120.0, "cars_full": 120.0, "cars_half": np.nan,
+                     "parking_price": 5.0, "parking_price_afternoon": 5.0, "regulated_parking": False,
+                     "shuttle": None, "bus_up": np.nan, "bus_down": np.nan})
+    daily = pd.DataFrame(rows).assign(year=2026, weather="good", event_day=False, moto_persons=0.0,
+                                      parking_price_assumed=False)
+    estimates, days = estimate_modal_shift(daily, stats)
+    e = estimates.set_index(["parameter", "occupancy", "days"])["estimate"]
+    assert e[("year_effect", "", "")] == pytest.approx(1.2)
+    # cars at 5 euro in 2026 = 1.2 x 2025 level, so the response is exp(-15 beta) / 1.2
+    assert e[("car_response", "", "")] == pytest.approx(np.exp(-beta * 15) / 1.2)
+    assert e[("price_paid", "", "")] == pytest.approx(20.0)
+    assert e[("share_walk_up", "constant", "with_walk_up")] > 0
+    assert set(days["role"]) == {"regime", "year_effect"}
