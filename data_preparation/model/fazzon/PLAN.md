@@ -26,14 +26,16 @@ domain experts: `OPEN_QUESTIONS.md`.
       - `Riepilogo dati bus estate 2025.xlsx` (Greenbus 2025)
       - `Rilevazione affluenza lago caprioli.*` + `_posti auto.csv` (2021 survey: occupancy, stalls)
       - `TGC_Viaggiato.csv` (only `TGC_Accessi` is on the lake)
+      - `meteo_stazione_T0074.csv` (from `data_download/download_meteo_meteotrentino.py`) to
+        `fazzon/meteo/`; re-run and re-upload when new days are needed
       - station reference table: road stations (code, name, lat/lon, road, up-valley direction,
         role) + bike counters + Fazzon location (now hard-coded in the script)
 - [ ] 1.3 Check what is already there and could replace local copies:
       - `dati_transiti/dati_transito_veicolare.parquet` (15.6 MB): does it keep
         station × date × hour × direction × class? If yes, use it instead of the 2.3 GB CSV.
       - `Gestionestrade_contamezzi.zip`: station metadata?
-- [ ] 1.4 Weather: keep fetching from Meteotrentino open data (no upload needed). Optionally log
-      a snapshot to the platform for reproducibility.
+- [x] 1.4 Weather: fetched from Meteotrentino open data by a `data_download/` script (as the
+      ISPAT presences), uploaded to the data lake, read by the pipeline like the other sources.
 
 ## Phase 2: Fazzon data-preparation pipeline (`data_preparation/model/fazzon/`)
 
@@ -42,7 +44,7 @@ Reuses `data_preparation/utils` (remote, io, config, `settings.yaml`); own entry
 
 | Step | Input | Output |
 |------|-------|--------|
-| 0 Download | data lake (`inputdata/` + `inputdata/fazzon/`), Meteotrentino | `raw_data/fazzon/` (as is) |
+| 0 Download | data lake (`inputdata/` + `inputdata/fazzon/`) | `raw_data/fazzon/` (as is) |
 | 1 Standardize | raw | `normalized/fazzon/*.parquet`: one clean table per source |
 | 2 Reference datasets | normalized | `final_data/fazzon/*.parquet` |
 | 3 Upload (optional) | final | platform dataitems (`log_dataframe`) |

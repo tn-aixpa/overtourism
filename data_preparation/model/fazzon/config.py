@@ -28,8 +28,6 @@ class Source:
 class FazzonConfig:
     sources: dict[str, Source]
     local_source_dir: Path | None
-    meteo_station: str
-    meteo_first_year: int
 
 
 def load_config(path=CONFIG_FILE) -> FazzonConfig:
@@ -45,10 +43,4 @@ def load_config(path=CONFIG_FILE) -> FazzonConfig:
         local_dir = Path(local).expanduser()
         if not local_dir.is_absolute():
             local_dir = path.parent / local_dir
-    meteo = raw.get("meteo_station") or {}
-    return FazzonConfig(
-        sources=sources,
-        local_source_dir=local_dir,
-        meteo_station=meteo.get("code", "T0074"),
-        meteo_first_year=int(meteo.get("first_year", 2023)),
-    )
+    return FazzonConfig(sources=sources, local_source_dir=local_dir)

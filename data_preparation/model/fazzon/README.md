@@ -7,14 +7,14 @@ main pipeline (`data_preparation/README.md`), reusing its `utils` and `config/se
 ```bash
 python -m model.fazzon.prepare                  # steps 0-2
 python -m model.fazzon.prepare --skip-download  # reuse <normalized>/fazzon/ (steps 2 only)
-python -m model.fazzon.prepare --refresh        # download data-lake and weather files again
+python -m model.fazzon.prepare --refresh        # download the data-lake files again
 python -m model.fazzon.prepare --upload         # also log the reference datasets to the platform
 python -m model.fazzon.analyze_new_data         # exploratory analysis and plots (Italian labels)
 ```
 
 | Step | Module | Input | Output |
 |------|--------|-------|--------|
-| 0 Sources | `sources.py` | data lake or `local_source_dir` (`fazzon.yaml`); Meteotrentino open data | raw files |
+| 0 Sources | `sources.py` | data lake or `local_source_dir` (`fazzon.yaml`) | raw files |
 | 1 Standardize | `standardize.py` | raw files | `Output/data/normalized/fazzon/*.parquet` |
 | 2 Reference datasets | `reference_datasets.py` | normalized tables | `Output/data/final_data/fazzon/*.parquet` |
 | 3 Upload | `utils.remote.log_dataframe` | reference datasets | platform dataitems (`--upload`) |
@@ -22,8 +22,9 @@ python -m model.fazzon.analyze_new_data         # exploratory analysis and plots
 * **Sources** (`fazzon.yaml`): each source has its data-lake key and its local path. With
   `local_source_dir` set (the default until the Fazzon files are uploaded, see `PLAN.md`) the
   files are read in place; otherwise they are streamed from the data lake to
-  `Output/data/raw_data/fazzon/`. The measured weather (Male' station, T0074) comes from the
-  Meteotrentino open-data service; the current year is downloaded at every run.
+  `Output/data/raw_data/fazzon/`. As in the main pipeline only the data lake is read: the
+  measured weather (Male' station, T0074) is fetched from the Meteotrentino open-data service
+  by `data_download/download_meteo_meteotrentino.py` and uploaded to `fazzon/meteo/`.
 * **Standardize**: one table per source, cleaned and quality-flagged, no modelling choices:
   `fazzon_parking` (2025 + 2026), `fazzon_parking_2025`, `fazzon_greenbus_2025` (rows after the
   pilot flagged `other_area`), `road_counts_hourly` / `road_counts_daily` (cars, classes 2+3;

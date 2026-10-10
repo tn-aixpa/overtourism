@@ -36,12 +36,10 @@ sources:
   tgc_accessi:
     key: TGC/TGC_Accessi.csv
     local: new/TGC_Accessi.csv
+  meteo_station:      # Meteotrentino station T0074 (Male'), measured daily weather;
+                      # produced by data_download/download_meteo_meteotrentino.py
+    key: fazzon/meteo/meteo_stazione_T0074.csv
+    local: meteo/meteo_stazione_T0074.csv
   meteo_bulletin:     # Meteotrentino bulletin per comune (comparison only)
     key: meteo_osservato.csv
     local: new/meteo_osservato.csv
-
-# Measured weather: Meteotrentino open data (not on the lake), downloaded at every run
-# for the current year, cached for past years.
-meteo_station:
-  code: T0074         # Male', reference station of the area "Sole, Peio e Rabbi"
-  first_year: 2023

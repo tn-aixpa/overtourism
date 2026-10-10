@@ -3,7 +3,7 @@
 
     python -m model.fazzon.prepare                    # steps 0-2, sources from fazzon.yaml
     python -m model.fazzon.prepare --skip-download    # steps 1-2 skipped too: reuse normalized tables
-    python -m model.fazzon.prepare --refresh          # download the data-lake / weather files again
+    python -m model.fazzon.prepare --refresh          # download the data-lake files again
     python -m model.fazzon.prepare --upload           # also log the reference datasets to the platform
 
 Run from the data_preparation folder (as the other entry points).
@@ -23,7 +23,7 @@ import pandas as pd
 
 from model.fazzon.config import FAZZON_FINAL_DIR, FAZZON_NORMALIZED_DIR, load_config
 from model.fazzon.reference_datasets import build_all
-from model.fazzon.sources import fetch_meteo_station, resolve_sources
+from model.fazzon.sources import resolve_sources
 from model.fazzon.standardize import standardize_all
 from utils.config import setup_logging
 from utils.io import save_computed_dfs
@@ -52,8 +52,7 @@ def prepare(skip_download: bool = False, refresh: bool = False, upload: bool = F
         tables = read_normalized()
     else:
         paths = resolve_sources(config, refresh=refresh)
-        meteo_files = fetch_meteo_station(config, refresh=refresh)
-        tables = standardize_all(paths, meteo_files)
+        tables = standardize_all(paths)
         save_computed_dfs(tables, local=True, type_format="parquet", path_saving=FAZZON_NORMALIZED_DIR)
 
     reference = build_all(tables)
@@ -64,7 +63,7 @@ def prepare(skip_download: bool = False, refresh: bool = False, upload: bool = F
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--skip-download", action="store_true", help="reuse <normalized>/fazzon/ (skip steps 0-1)")
-    parser.add_argument("--refresh", action="store_true", help="download data-lake and weather files again")
+    parser.add_argument("--refresh", action="store_true", help="download the data-lake files again")
     parser.add_argument("--upload", action="store_true", help="log the reference datasets to the platform")
     args = parser.parse_args()
     setup_logging()

@@ -9,7 +9,6 @@ Only cleaning and documented data-quality rules here (types, names, units, inval
 readings flagged); no modelling choices, which belong to step 2.
 """
 
-import json
 import logging
 import re
 from pathlib import Path
@@ -160,17 +159,12 @@ def road_counts_daily(hourly: pd.DataFrame) -> pd.DataFrame:
 
 
 # ------------------------------------------------------------------ weather
-def standardize_meteo_station(files: dict[str, list[Path]]) -> pd.DataFrame:
-    """Meteotrentino yearly JSON -> date, tmin, tmax, rain_mm, quality code (as delivered;
-    the codes are not documented: 145 from 2024, 1 in 2023, 81 on 4 days of 2023)."""
-    def load(measure):
-        return pd.concat([pd.DataFrame(json.loads(Path(f).read_text())["dati"]) for f in files[measure]],
-                         ignore_index=True)
-
-    temp = load("Temperature").rename(columns={"Min": "tmin", "Max": "tmax", "QualityMax": "quality"})
-    rain = load("Precipitazioni").rename(columns={"Valore": "rain_mm"})
-    out = temp[["giorno", "tmin", "tmax", "quality"]].merge(rain[["giorno", "rain_mm"]], on="giorno", how="outer")
-    out["date"] = pd.to_datetime(out["giorno"])  # ISO yyyy-mm-dd (rain is listed by day, then month)
+def standardize_meteo_station(path) -> pd.DataFrame:
+    """Meteotrentino station series (data_download/download_meteo_meteotrentino.py) -> date, tmin,
+    tmax, rain_mm, quality code (as delivered; the codes are not documented: 145 from 2024, 1 in
+    2023, 81 on 4 days of 2023)."""
+    out = pd.read_csv(path)
+    out["date"] = pd.to_datetime(out["date"], format="%Y-%m-%d")
     return out[["date", "tmin", "tmax", "rain_mm", "quality"]].sort_values("date").reset_index(drop=True)
 
 
@@ -257,7 +251,7 @@ def standardize_tgc_accessi(path) -> pd.DataFrame:
 
 
 # ------------------------------------------------------------------ all
-def standardize_all(paths: dict[str, Path], meteo_files: dict[str, list[Path]]) -> dict[str, pd.DataFrame]:
+def standardize_all(paths: dict[str, Path]) -> dict[str, pd.DataFrame]:
     stations = pd.read_csv(STATIONS_FILE, dtype={"code": str})
     tables = {"stations": stations}
     logger.info("Parking and bus...")
@@ -268,7 +262,7 @@ def standardize_all(paths: dict[str, Path], meteo_files: dict[str, list[Path]]) 
     tables["road_counts_hourly"] = standardize_road_counts(paths["road_counts"], stations)
     tables["road_counts_daily"] = road_counts_daily(tables["road_counts_hourly"])
     logger.info("Weather...")
-    tables["meteo_station"] = standardize_meteo_station(meteo_files)
+    tables["meteo_station"] = standardize_meteo_station(paths["meteo_station"])
     tables["meteo_bulletin"] = standardize_meteo_bulletin(paths["meteo_bulletin"])
     logger.info("Vodafone...")
     tables["vodafone_presences"] = standardize_vodafone(paths["vodafone_attendences"], paths["vodafone_attendences_str"])

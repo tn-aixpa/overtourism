@@ -2,29 +2,23 @@
 """
 STEP 0 - Raw sources of the Fazzon pipeline.
 
-Input : data lake (settings.yaml platform.s3_prefix + fazzon.yaml keys), or fazzon.yaml local_source_dir;
-        Meteotrentino open-data service for the measured weather
+Input : data lake (settings.yaml platform.s3_prefix + fazzon.yaml keys), or fazzon.yaml local_source_dir
 Output: paths of the raw files, as they arrive (no renaming of the content, no normalization)
+
+As in the main pipeline, only the data lake is read: external sources (e.g. the Meteotrentino
+weather) are fetched by the scripts in data_download/ and uploaded to the data lake.
 
 With a local source dir the files are read in place (no copy: the road counts alone are ~2.3 GB).
 From the data lake they are streamed to <raw>/fazzon/ and reused on the next run unless `refresh`.
 """
 
-import datetime as dt
 import logging
-import urllib.request
 from pathlib import Path
 
 from model.fazzon.config import FAZZON_RAW_DIR, FazzonConfig, Source
 from utils.io import ensure_dir
 
 logger = logging.getLogger(__name__)
-
-METEO_SERVICE = (
-    "https://dati.meteotrentino.it/service.asmx/"
-    "datiStoriciCaratteristiciSerie{measure}UnArea?codice={code}&anno={year}"
-)
-METEO_MEASURES = ("Temperature", "Precipitazioni")
 
 
 def _download_s3(source: Source, dest: Path) -> None:
@@ -54,22 +48,3 @@ def resolve_sources(config: FazzonConfig, refresh: bool = False, raw_dir=FAZZON_
         paths[name] = path
     return paths
 
-
-def fetch_meteo_station(config: FazzonConfig, refresh: bool = False, raw_dir=FAZZON_RAW_DIR) -> dict[str, list[Path]]:
-    """Yearly JSON files of the Meteotrentino station, cached in <raw>/fazzon/meteo/.
-
-    The current year is always downloaded again (new days); past years only if missing or `refresh`.
-    """
-    meteo_dir = ensure_dir(Path(raw_dir) / "meteo")
-    this_year = dt.date.today().year
-    files: dict[str, list[Path]] = {m: [] for m in METEO_MEASURES}
-    for measure in METEO_MEASURES:
-        for year in range(config.meteo_first_year, this_year + 1):
-            path = meteo_dir / f"{config.meteo_station}_{measure}_{year}.json"
-            if refresh or year == this_year or not path.exists():
-                url = METEO_SERVICE.format(measure=measure, code=config.meteo_station, year=year)
-                logger.info("Downloading %s %s %d from Meteotrentino...", config.meteo_station, measure, year)
-                with urllib.request.urlopen(url, timeout=60) as resp:
-                    path.write_bytes(resp.read())
-            files[measure].append(path)
-    return files

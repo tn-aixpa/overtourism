@@ -19,8 +19,7 @@ from model.fazzon.standardize import (
 
 def test_config_lists_all_sources():
     config = load_config()
-    assert {"parking", "road_counts", "vodafone_attendences", "meteo_bulletin"} <= set(config.sources)
-    assert config.meteo_station == "T0074"
+    assert {"parking", "road_counts", "vodafone_attendences", "meteo_station", "meteo_bulletin"} <= set(config.sources)
 
 
 def _parking_sheet(tmp_path):
