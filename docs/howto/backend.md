@@ -28,7 +28,7 @@ necessary to specify the project from which the data items and artefacts should 
 ### Model API data
 
 The Model API also needs data on startup: the Fazzon model reads its presence statistics, the dataitem
-`fazzon_presence_season_stats.parquet` produced by the Fazzon data-preparation pipeline (`data_preparation/model/fazzon`). It has no built-in values: **the Model API does not
+`fazzon_presence_stats.parquet` produced by the Fazzon data-preparation pipeline (`data_preparation/model/fazzon`). It has no built-in values: **the Model API does not
 start without them**. The same variables as above apply, set on the Model API:
 
 - `DT_OVERTURISM_STANDALONE_MODE=true` (default): the file must already be in the data folder.

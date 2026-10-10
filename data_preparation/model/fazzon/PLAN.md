@@ -91,8 +91,9 @@ Tasks:
       tables stay as `DEFAULT_*` (fallback); their comments fixed (per-season SD, 28/08 left out).
 - [~] 3.4 Model content updates enabled by the new data (decisions in `ASSUMPTIONS.md`).
       Done: register; 28/08/2025 included (D4); weekday split dropped (D5); lakeside dropped
-      (D6); daily parking price in `fazzon_daily` (A7, D3). Next: weather category (D7), modal-
-      shift estimation (D8), then the model's visitor numbers on top of it (replacing A3, A4).
+      (D6); daily parking price in `fazzon_daily` (A7, D3); weather category good / cool / rainy
+      (D7, D13, A19–A21). Next: modal-shift estimation (D8), then the model's visitor numbers
+      on top of it (replacing A3, A4).
       Original list:
       - non-car visitors: 2026 bus counts are measured, so they replace the 0.31 ASSUMPTION
         for the shuttle part
@@ -127,7 +128,10 @@ Tasks:
       admin authentication in the CRUD API, `digitalhub` dependency in `executor-backend`.
       Also (3.4): the Fazzon schema no longer has the `day_type` category nor the lakeside
       capacity, and the `lakeside` constraint is gone from the metadata (`mapper`, KPIs);
-      the data is one dataitem (`fazzon_presence_season_stats.parquet`).
+      the data is one dataitem (`fazzon_presence_stats.parquet`); new categorical parameter
+      `weather` (good / cool / rainy) in the Fazzon schema. Library issue to report to the
+      civic-digital-twins maintainers: fixing the season or the value of a
+      `ConditionalCategoricalIndex` in a scenario fails (D13).
 
 ## Dependencies
 

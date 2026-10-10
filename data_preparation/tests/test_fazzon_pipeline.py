@@ -7,6 +7,7 @@ from model.fazzon.reference_datasets import (
     PERSONS_PER_CAR,
     build_fazzon_daily,
     build_presence_stats,
+    weather_factors,
 )
 from model.fazzon.standardize import (
     road_counts_daily,
@@ -80,8 +81,11 @@ def test_road_counts_keep_cars_only_and_flag_dead_sensors(tmp_path):
     assert not daily.loc[1, "valid"]
 
 
-def _tables_for_daily(cars_by_date: dict[str, float]) -> dict[str, pd.DataFrame]:
+def _tables_for_daily(cars_by_date: dict[str, float], rain_by_date: dict[str, float] | None = None,
+                      tmax_by_date: dict[str, float] | None = None) -> dict[str, pd.DataFrame]:
     dates = pd.to_datetime(list(cars_by_date))
+    rain = [(rain_by_date or {}).get(d, 0.0) for d in cars_by_date]
+    tmax = [(tmax_by_date or {}).get(d, 25.0) for d in cars_by_date]
     parking = pd.DataFrame({"date": dates, "cars_full": list(cars_by_date.values()), "cars_half": np.nan,
                             "moto_persons": 0.0, "bus_up": np.nan, "bus_down": np.nan, "note": pd.NA})
     empty_dates = pd.DatetimeIndex([], name="date")
@@ -95,7 +99,7 @@ def _tables_for_daily(cars_by_date: dict[str, float]) -> dict[str, pd.DataFrame]
         "fazzon_parking": parking,
         "fazzon_parking_2025": parking[["date"]].assign(cars=parking["cars_full"]),
         "fazzon_greenbus_2025": pd.DataFrame({"date": dates[:1], "tickets": [9.0], "other_area": [False]}),
-        "meteo_station": pd.DataFrame({"date": dates, "tmin": 10.0, "tmax": 25.0, "rain_mm": 0.0, "quality": 145}),
+        "meteo_station": pd.DataFrame({"date": dates, "tmin": 10.0, "tmax": tmax, "rain_mm": rain, "quality": 145}),
         "meteo_bulletin": pd.DataFrame({"date": dates, "weather_desc": "Sereno", "tmin": 10, "tmax": 25, "rain_mm": 0}),
         "road_counts_hourly": hourly,
         "road_counts_daily": daily_road,
@@ -106,17 +110,44 @@ def _tables_for_daily(cars_by_date: dict[str, float]) -> dict[str, pd.DataFrame]
     }
 
 
-def test_presence_stats_per_season():
-    july = {str(d.date()): (300.0 if d.dayofweek == 6 else 100.0) for d in pd.date_range("2025-07-01", "2025-07-31")}
-    august = {str(d.date()): 200.0 for d in pd.date_range("2025-08-01", "2025-08-31")}
-    august["2025-08-28"] = 27.0  # D4: bad-weather days are part of the calibration
-    daily = build_fazzon_daily(_tables_for_daily({**july, **august}))
-    stats = build_presence_stats(daily).set_index("cluster_name")
-    assert list(stats.index) == ["july", "august"]
-    assert stats.loc["august", "n_days"] == 31
-    assert stats.loc["august", "mean_car_visitors"] == pytest.approx(np.mean(list(august.values())) * PERSONS_PER_CAR)
-    assert stats["freq_rel"].sum() == pytest.approx(1.0)
-    assert "day_type" not in stats.columns
+def test_weather_factors_recover_multiplicative_effect():
+    cal = pd.DataFrame({
+        "season": ["july"] * 4 + ["august"] * 4,
+        "weather": ["good", "good", "rainy", "rainy"] * 2,
+        "cars": [200.0, 200.0, 100.0, 100.0, 400.0, 400.0, 200.0, 200.0],
+    })
+    level, factor = weather_factors(cal)
+    assert level["july"] == pytest.approx(200.0) and level["august"] == pytest.approx(400.0)
+    assert factor["good"] == 1.0 and factor["rainy"] == pytest.approx(0.5)
+
+
+def test_presence_stats_per_season_and_weather():
+    days = pd.date_range("2025-07-01", "2025-08-31")
+    cars = {str(d.date()): (300.0 if d.month == 8 else 150.0) for d in days}
+    rain = {str(d.date()): 20.0 for d in days if d.day % 4 == 0}  # rainy days: half the cars
+    tmax = {str(d.date()): 15.0 for d in days if d.day % 4 == 1}  # cool days: 80 % of the cars
+    cars.update({k: v / 2 for k, v in cars.items() if k in rain})
+    cars.update({k: v * 0.8 for k, v in cars.items() if k in tmax})
+    cars["2025-08-28"] = 27.0  # D4: bad-weather days are part of the calibration
+    rain["2025-08-28"] = 34.0
+    daily = build_fazzon_daily(_tables_for_daily(cars, rain, tmax))
+    stats = build_presence_stats(daily).set_index(["season", "weather"])
+    assert set(stats.index.get_level_values("season")) == {"july", "august"}
+    assert set(stats.index.get_level_values("weather")) == {"good", "cool", "rainy"}
+    assert stats.loc[("august", "good"), "mean_car_visitors"] == pytest.approx(300.0 * PERSONS_PER_CAR, rel=0.05)
+    assert stats.loc[("august", "rainy"), "weather_factor"] == pytest.approx(0.5, rel=0.1)
+    assert stats.loc[("july", "cool"), "weather_factor"] == pytest.approx(0.8, rel=0.1)
+    assert (stats["weather_freq_rel"] > 0).all()
+    seasons = stats.reset_index().drop_duplicates("season")
+    assert seasons["season_freq_rel"].sum() == pytest.approx(1.0)
+    assert stats.groupby("season")["weather_freq_rel"].sum().tolist() == pytest.approx([1.0, 1.0])
+
+
+def test_presence_stats_fail_without_days_of_a_weather_class():
+    cars = {str(d.date()): 100.0 for d in pd.date_range("2025-07-01", "2025-07-31")}
+    daily = build_fazzon_daily(_tables_for_daily(cars))  # all days good: no cool / rainy days
+    with pytest.raises(ValueError, match="weather classes"):
+        build_presence_stats(daily)
 
 
 def test_parking_price_per_day():

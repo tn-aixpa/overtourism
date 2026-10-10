@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 
 DATA_DIR_ENV = "FAZZON_DATA_DIR"
 DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "database" / "fazzon"
-SEASON_STATS_FILE = "fazzon_presence_season_stats.parquet"
-DATA_FILES: tuple[str, ...] = (SEASON_STATS_FILE,)
+PRESENCE_STATS_FILE = "fazzon_presence_stats.parquet"
+DATA_FILES: tuple[str, ...] = (PRESENCE_STATS_FILE,)
 
 
 def fazzon_data_dir() -> Path:

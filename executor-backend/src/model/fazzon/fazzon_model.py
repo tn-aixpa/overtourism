@@ -33,13 +33,14 @@ lakeside constraint was dropped (D6).
 Context variables
 -----------------
 cv_season   : june / july / august / september   (from 2025 parking data; A14)
+cv_weather  : good / cool / rainy  (climatology averaged over the seasons; D7, A19, A20, D13)
 
 Presence variables
 ------------------
 pv_visitors_car   : daily car-mode visitors (calibrated; 2025 parking data; A1)
 pv_visitors_other : daily non-car visitors  (ASSUMPTION A3, A4)
 
-No day-type CV (D5); no weather CV yet (D7, planned).
+No day-type CV (D5).
 """
 
 # SPDX-License-Identifier: Apache-2.0
@@ -62,7 +63,7 @@ from civic_digital_twins.dt_model import (
 )
 from scipy import stats
 
-from .fazzon_presence_stats import presence_inputs
+from .fazzon_presence_stats import WEATHERS, presence_inputs
 
 # ---------------------------------------------------------------------------
 # Constraint
@@ -282,6 +283,7 @@ class FazzonModel(Model):
     Context variables
     -----------------
     cv_season   : june / july / august / september   (prior: proportional to observed days, A14)
+    cv_weather  : good / cool / rainy                (prior: climatology, A20, D13)
 
     Presence variables
     ------------------
@@ -298,6 +300,7 @@ class FazzonModel(Model):
 
         # Context variables
         cv_season: CategoricalIndex
+        cv_weather: CategoricalIndex
         # Presence distributions
         pv_visitors_car: ConditionalDistributionIndex
         pv_visitors_other: ConditionalDistributionIndex
@@ -336,22 +339,24 @@ class FazzonModel(Model):
         The presence statistics are read from the Fazzon data folder at every call
         (see :mod:`src.model.fazzon.fazzon_data`).
         """
-        season, car_visitors_stats, other_visitors_stats = presence_inputs()
+        season, weather, car_visitors_stats, other_visitors_stats = presence_inputs()
         cv_season = CategoricalIndex("season", {s: season[s] for s in season})  # A14
+        cv_weather = CategoricalIndex("weather", {w: weather[w] for w in WEATHERS})  # D7, D13
 
         pv_visitors_car = ConditionalDistributionIndex(
             "visitors_car",
-            [cv_season],
+            [cv_season, cv_weather],
             car_visitors_stats,
         )
         pv_visitors_other = ConditionalDistributionIndex(
             "visitors_other",
-            [cv_season],
+            [cv_season, cv_weather],
             other_visitors_stats,
         )
 
         return cls.Inputs(
             cv_season=cv_season,
+            cv_weather=cv_weather,
             pv_visitors_car=pv_visitors_car,
             pv_visitors_other=pv_visitors_other,
             # Conversion parameters

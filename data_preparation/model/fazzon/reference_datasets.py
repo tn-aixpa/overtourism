@@ -5,8 +5,8 @@ STEP 2 - Fazzon reference datasets.
 Input : <normalized>/fazzon/ tables (step 1)
 Output: <final>/fazzon/
   - fazzon_daily: one row per day, measured Fazzon data + access regime flags + predictors
-  - fazzon_presence_season_stats: the presence statistics of the Fazzon model
-    (executor-backend/src/model/fazzon/fazzon_presence_stats.py), per season
+  - fazzon_presence_stats: the presence statistics of the Fazzon model
+    (executor-backend/src/model/fazzon/fazzon_presence_stats.py), per season and weather class
 
 `fazzon_daily` holds measured values and the access rules of each day; assumptions
 (occupancy, non-car share, ...) are applied in the statistics. Every decision and
@@ -119,6 +119,26 @@ def _add_parking_price(daily: pd.DataFrame, parking_days: pd.DatetimeIndex) -> N
     daily["parking_price_assumed"] = unregulated_2026
 
 
+# ------------------------------------------------------------------ weather class (D7)
+WEATHER_CLASSES = ("good", "cool", "rainy")
+RAINY_MM = 5.0  # A19: rainy day = rain >= 5 mm
+COOL_DEGREES = 2.0  # A19: cool day = not rainy, tmax below the month's climatological mean - 2 C
+CLIMATOLOGY_YEARS = (2023, 2026)  # A20: years of the Male' station used as climatology
+
+
+def _add_weather_class(daily: pd.DataFrame) -> None:
+    """``weather``: good / cool / rainy (A19), for the days with station data; ``tmax_clim``:
+    the month's mean tmax over CLIMATOLOGY_YEARS (A20)."""
+    clim_days = daily["year"].between(*CLIMATOLOGY_YEARS) & daily["tmax"].notna()
+    tmax_clim = daily[clim_days].groupby("month")["tmax"].mean()
+    daily["tmax_clim"] = daily["month"].map(tmax_clim)
+    rainy = daily["rain_mm"] >= RAINY_MM
+    cool = ~rainy & (daily["tmax"] < daily["tmax_clim"] - COOL_DEGREES)
+    weather = np.select([rainy, cool], ["rainy", "cool"], "good").astype(object)
+    weather[(daily["tmax"].isna() | daily["rain_mm"].isna()).to_numpy()] = None
+    daily["weather"] = weather
+
+
 def build_fazzon_daily(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """One row per day from 2023-01-01 to the last day with any data."""
     fz = _fazzon_counts(tables["fazzon_parking"], tables["fazzon_parking_2025"], tables["fazzon_greenbus_2025"])
@@ -148,6 +168,7 @@ def build_fazzon_daily(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
     _add_parking_price(daily, parking_days=fz.index)
     daily["year"] = d.dt.year
     daily["month"] = d.dt.month
+    _add_weather_class(daily)
     daily["dow"] = d.dt.day_name().str.lower()
     daily["is_weekend"] = (d.dt.dayofweek >= 5).astype(int)
     return daily.reset_index()
@@ -162,31 +183,69 @@ SEASONS = {6: "june", 7: "july", 8: "august", 9: "september"}  # D9
 # D5: no day-type (weekday) split: no evidence of a weekday effect.
 
 
-def build_presence_stats(daily: pd.DataFrame) -> pd.DataFrame:
-    """Season statistics in the layout of fazzon_presence_stats.py.
+def weather_climatology(daily: pd.DataFrame) -> pd.DataFrame:
+    """P(weather class | season) from the Male' station over CLIMATOLOGY_YEARS (A20)."""
+    w = daily[daily["year"].between(*CLIMATOLOGY_YEARS) & daily["month"].isin(list(SEASONS))
+              & daily["weather"].notna()]
+    freq = pd.crosstab(w["month"].map(SEASONS), w["weather"], normalize="index")
+    return freq.reindex(columns=list(WEATHER_CLASSES), fill_value=0.0)
 
-    Car visitors: mean and SD of daily cars x PERSONS_PER_CAR (A1).
-    Non-car visitors: car visitors x NON_CAR_SHARE / (1 - NON_CAR_SHARE) (A3), SD =
-    OTHER_STD_REL x mean (A4).
+
+def weather_factors(cal: pd.DataFrame, n_iter: int = 50) -> tuple[pd.Series, pd.Series]:
+    """Multiplicative weather effect, the same in every season (A21):
+    E[cars | season, weather] = level[season] * factor[weather], factor["good"] = 1.
+
+    Fitted by alternating means on the calibration days (``season``, ``weather``, ``cars``).
+    """
+    factor = pd.Series(1.0, index=list(WEATHER_CLASSES))
+    for _ in range(n_iter):
+        level = (cal["cars"] / cal["weather"].map(factor)).groupby(cal["season"]).mean()
+        ratio = cal["cars"] / cal["season"].map(level)
+        factor = ratio.groupby(cal["weather"]).mean().reindex(list(WEATHER_CLASSES))
+        factor = factor / factor["good"]
+    return level, factor
+
+
+def build_presence_stats(daily: pd.DataFrame) -> pd.DataFrame:
+    """Presence statistics per (season, weather) cell, in the layout read by
+    fazzon_presence_stats.py.
+
+    * ``season_freq_rel``: share of the calibration days in the season (A14).
+    * ``weather_freq_rel``: P(weather | season), climatology (A20).
+    * Car visitors (A1): mean = level[season] x factor[weather] x PERSONS_PER_CAR (A21);
+      SD = mean x CV of the season's weather-adjusted daily cars.
+    * Non-car visitors: car visitors x NON_CAR_SHARE / (1 - NON_CAR_SHARE) (A3),
+      SD = OTHER_STD_REL x mean (A4).
     """
     other_ratio = NON_CAR_SHARE / (1.0 - NON_CAR_SHARE)
     cal = daily[(daily["year"] == CALIBRATION_YEAR) & daily["cars"].notna()].copy()
     cal["season"] = cal["month"].map(SEASONS)
-    cal = cal.dropna(subset=["season"])
+    cal = cal.dropna(subset=["season", "weather"])
+    level, factor = weather_factors(cal)
+    missing = factor[factor.isna()].index.tolist()
+    if missing:
+        raise ValueError(f"no {CALIBRATION_YEAR} days to calibrate the weather classes {missing}")
+    adjusted = cal["cars"] / (cal["season"].map(level) * cal["weather"].map(factor))
+    cv = adjusted.groupby(cal["season"]).std()
+    climatology = weather_climatology(daily)
 
     rows = []
     for season in [s for s in SEASONS.values() if s in set(cal["season"])]:
-        g = cal[cal["season"] == season]
-        mean_car = g["cars"].mean() * PERSONS_PER_CAR
-        rows.append({
-            "cluster_name": season,
-            "freq_rel": len(g) / len(cal),
-            "mean_car_visitors": mean_car,
-            "std_car_visitors": g["cars"].std() * PERSONS_PER_CAR,
-            "mean_other_visitors": mean_car * other_ratio,
-            "std_other_visitors": mean_car * other_ratio * OTHER_STD_REL,
-            "n_days": len(g),
-        })
+        n_season = int((cal["season"] == season).sum())
+        for weather in WEATHER_CLASSES:
+            mean_car = level[season] * factor[weather] * PERSONS_PER_CAR
+            rows.append({
+                "season": season,
+                "weather": weather,
+                "season_freq_rel": n_season / len(cal),
+                "weather_freq_rel": climatology.loc[season, weather],
+                "mean_car_visitors": mean_car,
+                "std_car_visitors": mean_car * cv[season],
+                "mean_other_visitors": mean_car * other_ratio,
+                "std_other_visitors": mean_car * other_ratio * OTHER_STD_REL,
+                "weather_factor": factor[weather],
+                "n_days": int(((cal["season"] == season) & (cal["weather"] == weather)).sum()),
+            })
     stats = pd.DataFrame(rows)
     stats.insert(0, "calibration", f"parking_{CALIBRATION_YEAR}")
     return stats
@@ -194,16 +253,20 @@ def build_presence_stats(daily: pd.DataFrame) -> pd.DataFrame:
 
 def build_all(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     daily = build_fazzon_daily(tables)
-    season_stats = build_presence_stats(daily)
-    _check(daily, season_stats)
-    return {"fazzon_daily": daily, "fazzon_presence_season_stats": season_stats}
+    stats = build_presence_stats(daily)
+    _check(daily, stats)
+    return {"fazzon_daily": daily, "fazzon_presence_stats": stats}
 
 
-def _check(daily: pd.DataFrame, season_stats: pd.DataFrame) -> None:
+def _check(daily: pd.DataFrame, stats: pd.DataFrame) -> None:
     if daily["date"].duplicated().any():
         raise ValueError("fazzon_daily: duplicated dates")
-    if not np.isclose(season_stats["freq_rel"].sum(), 1.0):
-        raise ValueError("season freq_rel does not sum to 1")
+    seasons = stats.drop_duplicates("season")
+    if not np.isclose(seasons["season_freq_rel"].sum(), 1.0):
+        raise ValueError("season_freq_rel does not sum to 1")
+    by_season = stats.groupby("season")["weather_freq_rel"].sum()
+    if not np.allclose(by_season, 1.0) or (stats["weather_freq_rel"] <= 0).any():
+        raise ValueError(f"weather_freq_rel must be > 0 and sum to 1 per season: {by_season.to_dict()}")
     for year in (2025, 2026):
         n = daily.loc[daily["year"] == year, "cars"].notna().sum()
         logger.info("fazzon_daily: %d days with Fazzon car counts in %d", n, year)

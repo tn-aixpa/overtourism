@@ -67,7 +67,7 @@ class FazzonBackend:
         self._c_max, self._o_max = 2000, 1000
         self._c_sample, self._o_sample = 100, 100
         self._config = OvertourismEvaluationConfig(
-            ensemble_size=4,  # 4 seasons (no day-type split, D5)
+            ensemble_size=12,  # 4 seasons x 3 weather classes (D5, D7)
             ensemble_seed=0,
             n_samples_per_combo=10,
             sample_seed=1,
@@ -165,6 +165,18 @@ class FazzonBackend:
                 ),
                 category="Contesto",
                 support=list(inp.cv_season.support),
+            ),
+            inp.cv_weather.name: OvertourismParameterMeta(
+                name=inp.cv_weather.name,
+                kind="categorical",
+                label="Meteo",
+                description=(
+                    "Vincola la valutazione a un tipo di giornata: good = bel tempo, "
+                    "cool = fresca (tmax > 2 °C sotto la media del mese), rainy = pioggia >= 5 mm. "
+                    "Lasciare su '(tutte)' per la media ponderata sulla climatologia."
+                ),
+                category="Contesto",
+                support=list(inp.cv_weather.support),
             ),
             inp.i_c_parking.name: OvertourismParameterMeta(
                 name=inp.i_c_parking.name,

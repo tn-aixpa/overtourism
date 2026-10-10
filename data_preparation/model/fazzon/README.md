@@ -34,10 +34,11 @@ python -m model.fazzon.analyze_new_data         # exploratory analysis and plots
 * **Reference datasets**:
   * `fazzon_daily`: one row per day from 2023-01-01: measured Fazzon data (cars, bus, motorbikes),
     access rules (`shuttle`, `regulated_parking`, `event_day`, `parking_price`,
-    `parking_price_afternoon`, `parking_price_assumed`), weather and predictors (road counts,
+    `parking_price_afternoon`, `parking_price_assumed`), weather and weather class (`weather`,
+    `tmax_clim`), predictors (road counts,
     Vodafone, bikes, Guest Card).
-  * `fazzon_presence_season_stats`: the presence statistics of the Fazzon model, per season
-    (2025 parking x 2.83 people/car, non-car share 0.31).
+  * `fazzon_presence_stats`: the presence statistics of the Fazzon model, per season and weather
+    class (good / cool / rainy), with the season weights and the weather climatology.
 
 The Fazzon model (`executor-backend/src/model/fazzon/`) reads the two statistics files from its
 data folder (`FAZZON_DATA_DIR`, e.g. `<repo>/data_preparation/Output/data/final_data/fazzon` for a
