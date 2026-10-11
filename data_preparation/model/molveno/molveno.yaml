@@ -8,9 +8,13 @@
 local_source_dir: null
 
 sources:
-  vodafone_attendences:   # Vodafone daily presences per area and profile, 2023-2025
+  vodafone_attendences:      # Vodafone daily presences per area, profile and country, 2023-2025
     key: vodafone_attendences_new.csv
     local: vodafone_attendences_new.csv
-  meteo_bulletin:         # Meteotrentino bulletin per comune
-    key: meteo_osservato.csv
-    local: meteo_osservato.csv
+  vodafone_attendences_str:  # Vodafone foreign presences, aggregated (STR), 2023-2025
+    key: vodafone_attendences_STR_new.csv
+    local: vodafone_attendences_STR_new.csv
+  meteo_station:             # Meteotrentino station T0414 San Lorenzo in Banale (Pergoletti), measured daily
+                             # weather; produced by data_download/download_meteo_meteotrentino.py T0414
+    key: molveno/meteo/meteo_stazione_T0414.csv
+    local: meteo/meteo_stazione_T0414.csv

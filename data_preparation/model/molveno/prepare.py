@@ -31,8 +31,8 @@ from utils.io import save_computed_dfs
 
 logger = logging.getLogger(__name__)
 
-NORMALIZED_TABLES = ("vodafone_presences", "meteo_bulletin")
-REFERENCE_TABLES = ("molveno_daily", "molveno_season_stats", "molveno_weekday_stats")
+NORMALIZED_TABLES = ("vodafone_presences", "meteo_station")
+REFERENCE_TABLES = ("molveno_daily", "molveno_presence_stats", "molveno_presence_stats_monthly", "molveno_weather_freq")
 
 
 def read_normalized(normalized_dir=MOLVENO_NORMALIZED_DIR) -> dict[str, pd.DataFrame]:

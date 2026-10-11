@@ -1,11 +1,15 @@
 """Daily measured weather of a Meteotrentino station (open-data service), 2023 to today.
 
+    python data_download/download_meteo_meteotrentino.py [STATION]    # default T0074
+
 Writes Download/meteo_stazione_<code>.csv (date, tmin, tmax, rain_mm, quality), to be uploaded to
-the data lake under fazzon/meteo/ (see model/fazzon/fazzon.yaml). Used by the Fazzon pipeline:
-station T0074 = Male', reference station of the area "Sole, Peio e Rabbi".
+the data lake under <model>/meteo/ (see model/<model>/<model>.yaml). Stations used:
+T0074 = Male', reference station of the area "Sole, Peio e Rabbi" (Fazzon); T0414 = San Lorenzo
+in Banale (Pergoletti), reference station of the area "Giudicarie esteriori e Molveno" (Molveno).
 """
 
 import datetime as dt
+import sys
 import time
 from pathlib import Path
 
@@ -13,7 +17,7 @@ import pandas as pd
 import requests
 
 BASE = "https://dati.meteotrentino.it/service.asmx/datiStoriciCaratteristiciSerie{measure}UnArea"
-STATION = "T0074"
+STATION = sys.argv[1] if len(sys.argv) > 1 else "T0074"
 YEARS = range(2023, dt.date.today().year + 1)
 SAVE_DIR = Path("Download")
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
