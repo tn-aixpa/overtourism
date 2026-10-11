@@ -380,7 +380,7 @@ choices about the axis grid, not per-evaluation quality knobs.
 **Location**: `overtourism/layer_3/api/`, run with:
 
 ```bash
-uv run fastapi run overtourism/layer_3/api/main.py --port 8001
+uv run fastapi run src/api/main.py --port 8001
 ```
 
 A REST layer over the Layer 3 backends. Depends only on
@@ -465,12 +465,12 @@ API surface (`overtourism.backend.api.v2.*`), not merged into these routes
 
 ## Layer 5 — Streamlit dev/test tooling
 
-**Location**: `overtourism/layer_3/dt_studio/`, isolated from the computation backend
+**Location**: `src/dt_studio/`, isolated from the computation backend
 — nothing under `src.model.*` imports Streamlit, and the generic
 shell (`dashboard/adapter.py`, `dashboard/app.py`) doesn't import
 `src.model.*` either, in either direction (see below).
 
-- `overtourism/layer_3/dt_studio/dashboard/` — the generic, model-agnostic Streamlit
+- `src/dt_studio/dashboard/` — the generic, model-agnostic Streamlit
   shell: `adapter.py` defines the `OvertourismAdapter` ABC, the `PlotData`/
   `ScenarioDef` data types, and a `ParameterSpec` `Protocol` describing the
   widget-metadata attributes a spec needs (`kind`, `label`, `min_value`, ...)
@@ -478,7 +478,7 @@ shell (`dashboard/adapter.py`, `dashboard/app.py`) doesn't import
   `src.model.common` just for a type hint. `app.py`'s `run_dashboard()`
   renders the sidebar widgets, field plot, KPI panel, and scenario selector
   against that `Protocol`, for any adapter.
-- `overtourism/layer_3/dt_studio/fazzon_dashboard.py` / `molveno_dashboard.py` — the
+- `src/dt_studio/fazzon_dashboard.py` / `molveno_dashboard.py` — the
   in-process, per-model entry points. Each defines a concrete
   `OvertourismAdapter` subclass wrapping the corresponding `Backend` directly
   (no HTTP involved — the fastest way to iterate on model/backend code) and
@@ -487,11 +487,14 @@ shell (`dashboard/adapter.py`, `dashboard/app.py`) doesn't import
   the other:
 
   ```bash
-  uv run streamlit run overtourism/layer_3/dt_studio/fazzon_dashboard.py
-  uv run streamlit run overtourism/layer_3/dt_studio/molveno_dashboard.py
+  uv run streamlit run src/dt_studio/fazzon_dashboard.py
+  uv run streamlit run src/dt_studio/molveno_dashboard.py
   ```
 
-- `overtourism/layer_3/dt_studio/dashboard/http_adapter.py` +
+  (from the `executor-backend` folder; the Fazzon model needs its data in
+  `FAZZON_DATA_DIR`, see `docs/howto/backend.md`).
+
+- `src/dt_studio/dashboard/http_adapter.py` +
   `fazzon_api_dashboard.py` / `molveno_api_dashboard.py` — the same
   dashboard shell driven instead by the Layer 5 REST API over HTTP
   (`HttpOvertourismAdapter`, one generic class for both models). This process
@@ -506,9 +509,9 @@ shell (`dashboard/adapter.py`, `dashboard/app.py`) doesn't import
   container split (see the Status note at the top of this document).
 
   ```bash
-  uv run fastapi run overtourism/layer_3/api/main.py --port 8001
-  uv run streamlit run overtourism/layer_3/dt_studio/fazzon_api_dashboard.py
-  uv run streamlit run overtourism/layer_3/dt_studio/molveno_api_dashboard.py
+  uv run fastapi run src/api/main.py --port 8001
+  uv run streamlit run src/dt_studio/fazzon_api_dashboard.py
+  uv run streamlit run src/dt_studio/molveno_api_dashboard.py
   ```
 
   Both dashboard styles are kept side by side: the in-process ones for fast

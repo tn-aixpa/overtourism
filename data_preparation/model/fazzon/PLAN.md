@@ -89,11 +89,15 @@ Tasks:
 - [x] 3.3 Replace the hard-coded tables in `fazzon_presence_stats.py` with the loader; keep the
       same interface (`season_stats`, `day_type_stats`, `make_presence_factories`). The hard-coded
       tables stay as `DEFAULT_*` (fallback); their comments fixed (per-season SD, 28/08 left out).
-- [~] 3.4 Model content updates enabled by the new data (decisions in `ASSUMPTIONS.md`).
+- [x] 3.4 Model content updates enabled by the new data (decisions in `ASSUMPTIONS.md`).
       Done: register; 28/08/2025 included (D4); weekday split dropped (D5); lakeside dropped
       (D6); daily parking price in `fazzon_daily` (A7, D3); weather category good / cool / rainy
-      (D7, D13, A19–A21); modal-shift estimation (D8, A22–A25, `fazzon_modal_shift`). Next:
-      review of the estimates, then the model's visitor numbers on top of it (replacing A3, A4).
+      (D7, D13, A19–A21); modal-shift estimation (D8, A22–A26, `fazzon_modal_shift`); access
+      policy in the model (D15, A27–A32): parking price (5-euro classes) and shuttle as
+      categories of the arrival distributions, presence axes = arrivals by private vehicle /
+      by other means (the policy moves the samples), persons per vehicle 2.5–3.5 (A2 replaces
+      A1), car mode share removed, scenarios B/C reworked; shuttle capacity from the timetable
+      (buses, seats, interval, hours, morning peak; D16, A29–A35).
       Original list:
       - non-car visitors: 2026 bus counts are measured, so they replace the 0.31 ASSUMPTION
         for the shuttle part
@@ -132,6 +136,16 @@ Tasks:
       `weather` (good / cool / rainy) in the Fazzon schema. Library issue to report to the
       civic-digital-twins maintainers: fixing the season or the value of a
       `ConditionalCategoricalIndex` in a scenario fails (D13).
+      Also (3.4, access policy): two dataitems (`fazzon_presence_stats.parquet`,
+      `fazzon_modal_shift.parquet`); schema parameter `car mode share` removed, `parking price
+      (euro per vehicle)` added (scalar, 5–40, step 5, default 5; a category in the model,
+      converted by the backend); the axes are the arrivals by private vehicle / by other means
+      (labels changed, field names `visitors_car` / `visitors_other` unchanged; y range now
+      0–2000); scenarios `b1_shuttle_full` and `b2_shuttle_valley` replaced by
+      `b1_shuttle_only` and `b2_price_10`; the slider `shuttle daily vehicle passages` is
+      replaced by the shuttle timetable parameters (`shuttle buses`, `shuttle seats per bus`,
+      `shuttle interval (minutes)`, `shuttle first departure (hour)`, `shuttle end of service
+      (hour)`, `shuttle morning peak end (hour)`, `shuttle riders in the morning peak (share)`).
 
 ## Dependencies
 

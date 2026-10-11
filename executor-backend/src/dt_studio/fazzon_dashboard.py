@@ -3,7 +3,10 @@
 
 Dev/test tooling only — not part of the application backend. Run with::
 
-    uv run streamlit run overtourism/dt_studio/fazzon_dashboard.py
+    uv run streamlit run src/dt_studio/fazzon_dashboard.py
+
+from the ``executor-backend`` folder, with the Fazzon data in ``FAZZON_DATA_DIR`` (e.g.
+``../data_preparation/Output/data/final_data/fazzon``; see ``docs/howto/backend.md``).
 """
 
 from __future__ import annotations

@@ -322,11 +322,11 @@ def test_get_fazzon_schema_returns_fazzon_frontend_metadata() -> None:
             },
             "bidimensional": {
                 "x": {
-                    "label": "Visitatori in auto / giorno",
+                    "label": "Visitatori arrivati in auto / giorno",
                     "field": "visitors_car",
                 },
                 "y": {
-                    "label": "Visitatori non-auto / giorno",
+                    "label": "Visitatori arrivati con altri mezzi / giorno",
                     "field": "visitors_other",
                 },
             },

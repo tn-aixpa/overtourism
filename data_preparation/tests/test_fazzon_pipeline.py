@@ -4,7 +4,7 @@ import pytest
 
 from model.fazzon.config import load_config
 from model.fazzon.reference_datasets import (
-    PERSONS_PER_CAR,
+    REFERENCE_OCCUPANCY,
     build_fazzon_daily,
     build_presence_stats,
     weather_factors,
@@ -134,7 +134,7 @@ def test_presence_stats_per_season_and_weather():
     stats = build_presence_stats(daily).set_index(["season", "weather"])
     assert set(stats.index.get_level_values("season")) == {"july", "august"}
     assert set(stats.index.get_level_values("weather")) == {"good", "cool", "rainy"}
-    assert stats.loc[("august", "good"), "mean_car_visitors"] == pytest.approx(300.0 * PERSONS_PER_CAR, rel=0.05)
+    assert stats.loc[("august", "good"), "mean_car_visitors"] == pytest.approx(300.0 * REFERENCE_OCCUPANCY, rel=0.05)
     assert stats.loc[("august", "rainy"), "weather_factor"] == pytest.approx(0.5, rel=0.1)
     assert stats.loc[("july", "cool"), "weather_factor"] == pytest.approx(0.8, rel=0.1)
     assert (stats["weather_freq_rel"] > 0).all()
@@ -165,7 +165,7 @@ def test_modal_shift_recovers_known_response():
 
     stats = pd.DataFrame({
         "season": ["july", "august", "september"], "weather": ["good"] * 3,
-        "mean_car_visitors": [100 * PERSONS_PER_CAR, 200 * PERSONS_PER_CAR, 100 * PERSONS_PER_CAR],
+        "mean_car_visitors": [100 * REFERENCE_OCCUPANCY, 200 * REFERENCE_OCCUPANCY, 100 * REFERENCE_OCCUPANCY],
     })
     beta = 0.1
     rows = []
@@ -191,9 +191,10 @@ def test_modal_shift_recovers_known_response():
     assert e[("visitor_response", "")] == pytest.approx(np.exp(-beta * 15) / 1.2 * 3.5 / 2.5)
     assert e[("share_walk_up", "with_walk_up")] > 0
     assert set(days["role"]) == {"regime", "year_effect"}
+    assert e[("occupancy_high", "")] == 3.5 and e[("reference_price", "")] == 5.0
 
 
 def test_occupancy_interpolates_between_low_and_high_price():
-    from model.fazzon.modal_shift import occupancy
+    from model.fazzon.reference_datasets import occupancy
 
     assert occupancy([0.0, 5.0, 10.0, 20.0, 40.0]).tolist() == pytest.approx([2.5, 2.5, 2.5 + 1 / 3, 3.5, 3.5])

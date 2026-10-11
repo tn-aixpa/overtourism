@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 DATA_DIR_ENV = "FAZZON_DATA_DIR"
 DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "database" / "fazzon"
 PRESENCE_STATS_FILE = "fazzon_presence_stats.parquet"
-DATA_FILES: tuple[str, ...] = (PRESENCE_STATS_FILE,)
+MODAL_SHIFT_FILE = "fazzon_modal_shift.parquet"
+DATA_FILES: tuple[str, ...] = (PRESENCE_STATS_FILE, MODAL_SHIFT_FILE)
 
 
 def fazzon_data_dir() -> Path:
@@ -65,7 +66,7 @@ def download_fazzon_data(overwrite: bool = False) -> Path:
 
     import digitalhub as dh  # type: ignore[import-untyped]
 
-    from .fazzon_presence_stats import load_presence_stats
+    from .fazzon_presence_stats import behaviour_params, load_presence_stats
 
     project_name = os.getenv("PROJECT_NAME", "overtourism")
     target.mkdir(parents=True, exist_ok=True)
@@ -83,7 +84,8 @@ def download_fazzon_data(overwrite: bool = False) -> Path:
         missing = _missing_files(tmp_dir)
         if missing:
             raise RuntimeError(f"Fazzon data download: files not received {missing}")
-        load_presence_stats(tmp_dir)  # raises if the new files are not usable
+        load_presence_stats(tmp_dir)  # raise if the new files are not usable
+        behaviour_params(tmp_dir)
         for name in DATA_FILES:
             shutil.move(str(tmp_dir / name), str(target / name))
     logger.info("Fazzon data downloaded to %s", target)

@@ -41,10 +41,29 @@ PRESENCE_STATS = pd.DataFrame(
 )
 
 
-def write_fazzon_stats(folder: Path, stats=PRESENCE_STATS) -> Path:
-    """Write the Fazzon presence statistics file (pipeline layout) into *folder*."""
+MODAL_SHIFT = pd.DataFrame(
+    [
+        ("reference_price", "", 5.0),
+        ("beta_per_euro", "", 0.09),
+        ("occupancy_low_price", "", 5.0),
+        ("occupancy_low", "", 2.5),
+        ("occupancy_high_price", "", 20.0),
+        ("occupancy_high", "", 3.5),
+        ("share_shuttle", "with_walk_up", 0.77),
+        ("share_walk_up", "with_walk_up", 0.155),
+        ("share_elsewhere", "with_walk_up", 0.075),
+    ],
+    columns=["parameter", "days", "estimate"],
+)
+
+
+def write_fazzon_stats(folder: Path, stats=PRESENCE_STATS, modal_shift=MODAL_SHIFT) -> Path:
+    """Write the Fazzon data files (pipeline layout) into *folder*."""
     folder.mkdir(parents=True, exist_ok=True)
     stats.assign(calibration="parking_2025").to_parquet(folder / "fazzon_presence_stats.parquet")
+    modal_shift.assign(low=modal_shift["estimate"], high=modal_shift["estimate"]).to_parquet(
+        folder / "fazzon_modal_shift.parquet"
+    )
     return folder
 
 

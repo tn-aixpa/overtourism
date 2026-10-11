@@ -29,25 +29,15 @@ import numpy as np
 import pandas as pd
 
 from model.fazzon.reference_datasets import (
-    PERSONS_PER_CAR,
+    OCCUPANCY_HIGH,
+    OCCUPANCY_LOW,
     PRICE_2025,
-    PRICE_2026_REGULATED,
+    REFERENCE_OCCUPANCY,
     SEASONS,
+    occupancy,
 )
 
 logger = logging.getLogger(__name__)
-
-# A2: persons per vehicle, linear in the price paid between these two points (A26: at 5 euro the
-# count includes the motorbikes, so 2.5 is an average over cars and motorbikes).
-OCCUPANCY_LOW = (PRICE_2025, 2.5)
-OCCUPANCY_HIGH = (PRICE_2026_REGULATED, 3.5)
-
-
-def occupancy(price):
-    """Persons per vehicle at the given price paid per vehicle (A2)."""
-    (p0, o0), (p1, o1) = OCCUPANCY_LOW, OCCUPANCY_HIGH
-    return np.clip(o0 + (np.asarray(price, dtype=float) - p0) * (o1 - o0) / (p1 - p0), o0, o1)
-
 
 N_BOOTSTRAP = 2000
 INTERVAL = (0.05, 0.95)
@@ -60,7 +50,7 @@ def modal_shift_days(daily: pd.DataFrame, stats: pd.DataFrame) -> pd.DataFrame:
     ``role``: ``year_effect`` (5 euro, no access rules, no event; A22) or ``regime`` (access
     rules and shuttle running; D2, D3 excluded).
     """
-    expected = (stats.set_index(["season", "weather"])["mean_car_visitors"] / PERSONS_PER_CAR)
+    expected = stats.set_index(["season", "weather"])["mean_car_visitors"] / REFERENCE_OCCUPANCY
     f = daily[(daily["year"] == 2026) & daily["cars"].notna() & daily["month"].isin(list(SEASONS))].copy()
     f = f.dropna(subset=["weather"])
     f["season"] = f["month"].map(SEASONS)
@@ -127,6 +117,13 @@ def estimate_modal_shift(daily: pd.DataFrame, stats: pd.DataFrame) -> tuple[pd.D
         sample, parameter = key.split("__") if "__" in key else ("", key)
         lo, hi = boot[key].quantile(list(INTERVAL))
         rows.append({"parameter": parameter, "days": sample, "estimate": value, "low": lo, "high": hi})
+    # Constants of the behaviour model, so that the Fazzon model reads them from here (A2)
+    for parameter, value in (
+        ("reference_price", PRICE_2025),
+        ("occupancy_low_price", OCCUPANCY_LOW[0]), ("occupancy_low", OCCUPANCY_LOW[1]),
+        ("occupancy_high_price", OCCUPANCY_HIGH[0]), ("occupancy_high", OCCUPANCY_HIGH[1]),
+    ):
+        rows.append({"parameter": parameter, "days": "", "estimate": value, "low": value, "high": value})
     estimates = pd.DataFrame(rows)
     estimates["n_year_effect_days"] = len(year)
     estimates["n_regime_days"] = len(regime)

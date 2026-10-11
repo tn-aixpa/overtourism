@@ -73,7 +73,7 @@ class ScenarioDef:
     Parameters
     ----------
     key : str
-        Unique machine-readable identifier (e.g. ``"b1_shuttle_full"``).
+        Unique machine-readable identifier (e.g. ``"b1_shuttle_only"``).
     label : str
         Short human-readable label shown in the scenario selector.
     category : str

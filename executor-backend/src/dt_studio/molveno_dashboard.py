@@ -3,7 +3,7 @@
 
 Dev/test tooling only — not part of the application backend. Run with::
 
-    uv run streamlit run overtourism/dt_studio/molveno_dashboard.py
+    uv run streamlit run src/dt_studio/molveno_dashboard.py
 """
 
 from __future__ import annotations

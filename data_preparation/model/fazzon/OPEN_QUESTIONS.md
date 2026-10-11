@@ -38,6 +38,11 @@ Quando una domanda viene chiusa, aggiornare la risposta qui e il codice corrispo
 10. **Tariffa parcheggio 2026 fuori dal periodo regolato** (prima del 4/7 e
     dopo il 31/8): assunta 5 € come nel 2025 (`ASSUMPTIONS.md`, A7). È corretto?
 
+11. **Navetta Lakebus 2026:** 2 bus da 30 posti ogni 30 minuti, 9-19, è corretto
+    per tutta la stagione? Quanti passeggeri salgono entro le 12 (assunta una quota di
+    0,6; `ASSUMPTIONS.md` A35)? Chi non trova posto rinuncia, sale a piedi o usa l'auto
+    (A34)?
+
 ## Dati da richiedere
 
 8. **Conteggi traffico PAT 2026** (stessa esportazione, almeno stazioni 110

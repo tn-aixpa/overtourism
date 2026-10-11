@@ -175,9 +175,22 @@ def build_fazzon_daily(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
 
 
 # ------------------------------------------------------------------ presence statistics
-PERSONS_PER_CAR = 2.83  # A1: NetMobility 2021 field study
-NON_CAR_SHARE = 0.31  # A3: 2022 EETRA survey, non-car share of visitors (to be replaced)
-OTHER_STD_REL = 0.50  # A4: relative SD of non-car visitors (to be replaced)
+# A2: persons per vehicle, linear in the price paid per vehicle between these two points
+# (A26: at 5 euro the vehicle count includes the motorbikes, so 2.5 is an average over cars and
+# motorbikes). Replaces A1 (2.83 persons per car).
+OCCUPANCY_LOW = (PRICE_2025, 2.5)
+OCCUPANCY_HIGH = (PRICE_2026_REGULATED, 3.5)
+
+
+def occupancy(price):
+    """Persons per vehicle at the given price paid per vehicle (A2)."""
+    (p0, o0), (p1, o1) = OCCUPANCY_LOW, OCCUPANCY_HIGH
+    return np.clip(o0 + (np.asarray(price, dtype=float) - p0) * (o1 - o0) / (p1 - p0), o0, o1)
+
+
+REFERENCE_OCCUPANCY = float(occupancy(PRICE_2025))  # 2025 conditions: 2.5 persons per vehicle
+NON_CAR_SHARE = 0.31  # A3: 2022 EETRA survey, non-car share of visitors in 2025 conditions
+OTHER_STD_REL = 0.50  # A4: relative SD of non-car visitors in 2025 conditions
 CALIBRATION_YEAR = 2025  # D9: calibration on the 2025 parking data (D4: all days included)
 SEASONS = {6: "june", 7: "july", 8: "august", 9: "september"}  # D9
 # D5: no day-type (weekday) split: no evidence of a weekday effect.
@@ -212,7 +225,8 @@ def build_presence_stats(daily: pd.DataFrame) -> pd.DataFrame:
 
     * ``season_freq_rel``: share of the calibration days in the season (A14).
     * ``weather_freq_rel``: P(weather | season), climatology (A20).
-    * Car visitors (A1): mean = level[season] x factor[weather] x PERSONS_PER_CAR (A21);
+    * Visitors by private vehicle in 2025 conditions (5 euro; A2, A26): mean = level[season] x
+      factor[weather] x REFERENCE_OCCUPANCY (A21);
       SD = mean x CV of the season's weather-adjusted daily cars.
     * Non-car visitors: car visitors x NON_CAR_SHARE / (1 - NON_CAR_SHARE) (A3),
       SD = OTHER_STD_REL x mean (A4).
@@ -233,7 +247,7 @@ def build_presence_stats(daily: pd.DataFrame) -> pd.DataFrame:
     for season in [s for s in SEASONS.values() if s in set(cal["season"])]:
         n_season = int((cal["season"] == season).sum())
         for weather in WEATHER_CLASSES:
-            mean_car = level[season] * factor[weather] * PERSONS_PER_CAR
+            mean_car = level[season] * factor[weather] * REFERENCE_OCCUPANCY
             rows.append({
                 "season": season,
                 "weather": weather,
