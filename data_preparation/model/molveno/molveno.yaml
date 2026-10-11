@@ -3,8 +3,9 @@
 # (outputs go to <raw|normalized|final>/molveno/). Format: model/common/sources.py.
 
 # Read the sources from this local folder instead of the data lake (null = data lake).
-# Relative paths are resolved from this file's folder.
-local_source_dir: data
+# Relative paths are resolved from this file's folder. Without access to the data lake, run
+# with --local-sources DIR (e.g. model/molveno/data, the local copies).
+local_source_dir: null
 
 sources:
   vodafone_attendences:   # Vodafone daily presences per area and profile, 2023-2025

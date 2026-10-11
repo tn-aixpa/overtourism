@@ -4,6 +4,7 @@
     python -m model.fazzon.prepare                    # steps 0-2, sources from fazzon.yaml
     python -m model.fazzon.prepare --skip-download    # steps 1-2 skipped too: reuse normalized tables
     python -m model.fazzon.prepare --refresh          # download the data-lake files again
+    python -m model.fazzon.prepare --local-sources DIR    # read the sources from DIR, not the data lake
     python -m model.fazzon.prepare --upload           # also log the reference datasets to the platform
 
 Run from the data_preparation folder (as the other entry points).
@@ -45,8 +46,8 @@ def read_reference(final_dir=FAZZON_FINAL_DIR) -> dict[str, pd.DataFrame]:
     return {name: pd.read_parquet(final_dir / f"{name}.parquet") for name in names}
 
 
-def prepare(skip_download: bool = False, refresh: bool = False, upload: bool = False) -> dict[str, pd.DataFrame]:
-    config = load_config()
+def prepare(skip_download: bool = False, refresh: bool = False, upload: bool = False, local_sources=None) -> dict[str, pd.DataFrame]:
+    config = load_config(local_source_dir=local_sources)
     if skip_download:
         logger.info("Reusing the normalized tables in %s", FAZZON_NORMALIZED_DIR)
         tables = read_normalized()
@@ -65,9 +66,11 @@ def main():
     parser.add_argument("--skip-download", action="store_true", help="reuse <normalized>/fazzon/ (skip steps 0-1)")
     parser.add_argument("--refresh", action="store_true", help="download the data-lake files again")
     parser.add_argument("--upload", action="store_true", help="log the reference datasets to the platform")
+    parser.add_argument("--local-sources", metavar="DIR", help="read the sources from DIR (overrides fazzon.yaml)")
     args = parser.parse_args()
     setup_logging()
-    prepare(skip_download=args.skip_download, refresh=args.refresh, upload=args.upload)
+    prepare(skip_download=args.skip_download, refresh=args.refresh, upload=args.upload,
+            local_sources=args.local_sources)
 
 
 if __name__ == "__main__":

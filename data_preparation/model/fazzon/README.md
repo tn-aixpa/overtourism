@@ -8,6 +8,7 @@ main pipeline (`data_preparation/README.md`), reusing its `utils` and `config/se
 python -m model.fazzon.prepare                  # steps 0-2
 python -m model.fazzon.prepare --skip-download  # reuse <normalized>/fazzon/ (steps 2 only)
 python -m model.fazzon.prepare --refresh        # download the data-lake files again
+python -m model.fazzon.prepare --local-sources model/fazzon/data  # local copies instead of the data lake
 python -m model.fazzon.prepare --upload         # also log the reference datasets to the platform
 python -m model.fazzon.exploratory_analysis     # exploratory analysis and plots (Italian labels)
 ```
@@ -20,10 +21,9 @@ python -m model.fazzon.exploratory_analysis     # exploratory analysis and plots
 | 3 Upload | `utils.remote.log_dataframe` | reference datasets | platform dataitems (`--upload`) |
 
 * **Sources** (`fazzon.yaml`): each source has its data-lake key and its local path. With
-  `local_source_dir` set (the default until the Fazzon files are uploaded to the data lake) the
-  files are read in place; otherwise they are streamed from the data lake to
-  `Output/data/raw_data/fazzon/`. As in the main pipeline only the data lake is read: the
-  measured weather (Male' station, T0074) is fetched from the Meteotrentino open-data service
+  `local_source_dir` set, or with `--local-sources DIR`, the files are read in place;
+  otherwise (the default) they are streamed from the data lake to `Output/data/raw_data/fazzon/`.
+  As in the main pipeline only the data lake is read: the measured weather (Male' station, T0074) is fetched from the Meteotrentino open-data service
   by `data_download/download_meteo_meteotrentino.py` and uploaded to `fazzon/meteo/`.
 * **Standardize**: one table per source, cleaned and quality-flagged, no modelling choices:
   `fazzon_parking` (2025 + 2026), `fazzon_parking_2025`, `fazzon_greenbus_2025` (rows after the

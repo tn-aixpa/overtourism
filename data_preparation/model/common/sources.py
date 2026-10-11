@@ -40,13 +40,16 @@ class SourcesConfig:
     local_source_dir: Path | None
 
 
-def load_sources_config(path) -> SourcesConfig:
+def load_sources_config(path, local_source_dir=None) -> SourcesConfig:
+    """Reads the YAML; `local_source_dir` (e.g. from the command line) overrides its value."""
     path = Path(path)
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     sources = {
         name: Source(name=name, key=spec["key"], local=spec["local"])
         for name, spec in (raw.get("sources") or {}).items()
     }
+    if local_source_dir is not None:
+        return SourcesConfig(sources=sources, local_source_dir=Path(local_source_dir).expanduser().resolve())
     local = raw.get("local_source_dir")
     local_dir = None
     if local:

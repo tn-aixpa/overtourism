@@ -8,6 +8,7 @@ Reference datasets for the Molveno model. Same structure as the Fazzon pipeline
 python -m model.molveno.prepare                  # steps 0-2
 python -m model.molveno.prepare --skip-download  # reuse <normalized>/molveno/ (step 2 only)
 python -m model.molveno.prepare --refresh        # download the data-lake files again
+python -m model.molveno.prepare --local-sources model/molveno/data  # local copies instead of the data lake
 python -m model.molveno.prepare --upload         # also log the reference datasets to the platform
 ```
 

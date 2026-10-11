@@ -15,5 +15,5 @@ FAZZON_NORMALIZED_DIR = NORMALIZED_DIR / "fazzon"
 FAZZON_FINAL_DIR = FINAL_DIR / "fazzon"
 
 
-def load_config(path=CONFIG_FILE) -> SourcesConfig:
-    return load_sources_config(path)
+def load_config(path=CONFIG_FILE, local_source_dir=None) -> SourcesConfig:
+    return load_sources_config(path, local_source_dir)

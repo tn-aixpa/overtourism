@@ -3,14 +3,13 @@
 # (outputs go to <raw|normalized|final>/fazzon/).
 
 # Read the sources from this local folder instead of the data lake (null = data lake).
-# Relative paths are resolved from this file's folder. Until the Fazzon files are
-# uploaded to the data lake the pipeline runs from the local copies.
-local_source_dir: data
+# Relative paths are resolved from this file's folder. Without access to the data lake, run
+# with --local-sources DIR (e.g. model/fazzon/data, the local copies).
+local_source_dir: null
 
 # One entry per source:
 #   key:   object key on the data lake, relative to settings.yaml platform.s3_prefix
 #   local: path relative to local_source_dir (local copies are not always named as on the lake)
-# Keys under fazzon/ are the proposed upload location (not on the lake yet).
 sources:
   parking:            # 2025 + 2026 side by side, operator spreadsheet
     key: fazzon/Dati parcheggio Fazzon.xlsx

@@ -14,5 +14,5 @@ MOLVENO_NORMALIZED_DIR = NORMALIZED_DIR / "molveno"
 MOLVENO_FINAL_DIR = FINAL_DIR / "molveno"
 
 
-def load_config(path=CONFIG_FILE) -> SourcesConfig:
-    return load_sources_config(path)
+def load_config(path=CONFIG_FILE, local_source_dir=None) -> SourcesConfig:
+    return load_sources_config(path, local_source_dir)
