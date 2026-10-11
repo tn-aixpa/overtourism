@@ -5,7 +5,7 @@ comando sia cella-per-cella in un REPL / finestra interattiva stile Jupyter
 (VS Code, PyCharm, `jupytext`, ...). Dalla cartella ``data_preparation``::
 
     python -m model.fazzon.prepare           # una volta: produce i dataset (vedi prepare.py)
-    python -m model.fazzon.analyze_new_data
+    python -m model.fazzon.exploratory_analysis
 
 I dati sono letti dai parquet prodotti dalla pipeline Fazzon
 (``<normalized>/fazzon/`` e ``<final>/fazzon/``), non dai file sorgente.
@@ -41,8 +41,8 @@ Cosa fa, in ordine:
    esaurimento posti, navetta pilota Greenbus solo 28/6-20/7), a parita' di
    giorno della settimana.
 
-Le ipotesi ancora da validare con gli esperti di dominio sono elencate in
-``OPEN_QUESTIONS.md`` (stessa cartella).
+Decisioni e ipotesi (con quelle ancora da validare con gli esperti di dominio)
+sono elencate in ``ASSUMPTIONS.md`` (stessa cartella).
 
 Correzioni di qualita' dei dati applicate dalla pipeline: il file dei
 biglietti bus 2025 contiene cinque righe sparse in agosto relative a un'altra
@@ -83,7 +83,7 @@ from model.fazzon.reference_datasets import (
 )
 
 FAZZON_DIR = Path(__file__).resolve().parent
-OUTPUT_DIR = FAZZON_DIR / "data" / "new" / "analysis_output"
+OUTPUT_DIR = FAZZON_DIR / "data" / "analysis_output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 PERSONS_PER_CAR = 2.83  # A1: NetMobility 2021 field study
@@ -95,7 +95,7 @@ REGIME_2026_SHUTTLE_END = SHUTTLE_PERIODS["lakebus"][1]
 # Giorni 2026 esclusi dal confronto: evento "5days" (>2000 persone, prati
 # aggiuntivi adibiti a parcheggio, auto non conteggiate) e 21/8 (bus non attivo).
 EXCLUDED_DAYS_2026 = EVENT_DAYS.union(SHUTTLE_NOT_RUNNING)
-# Persone per auto secondo il gestore (OPEN_QUESTIONS.md, punto 4): ~2,5 senza
+# Persone per veicolo secondo il gestore (ASSUMPTIONS.md, A2): ~2,5 senza
 # regime (2025, e 2026 fuori dal periodo regolato); ~3,5 con il regime 2026,
 # perche' con parcheggio a 20 euro "si sale solo con l'auto piena".
 OCCUPANCY_NO_REGIME = 2.5  # A2

@@ -4,7 +4,7 @@
 
 # Read the sources from this local folder instead of the data lake (null = data lake).
 # Relative paths are resolved from this file's folder. Until the Fazzon files are
-# uploaded (PLAN.md, Phase 1) the pipeline runs from the local copies.
+# uploaded to the data lake the pipeline runs from the local copies.
 local_source_dir: data
 
 # One entry per source:

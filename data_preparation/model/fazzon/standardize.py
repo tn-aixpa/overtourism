@@ -41,7 +41,7 @@ def standardize_parking(path) -> pd.DataFrame:
 
     `bus_up`: "N° persone bus" (people going up, A5); `bus_down`: people coming down, written
     as text ("301 (discesa)") in the note column from 01/08/2026. The sheet's own person
-    totals are not read (inconsistent formulas, OPEN_QUESTIONS.md point 7).
+    totals are not read (inconsistent formulas in the operator sheet).
     """
     raw = pd.read_excel(path, header=None, skiprows=3).iloc[:, : len(_PARKING_COLUMNS)]
     raw.columns = _PARKING_COLUMNS

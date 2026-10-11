@@ -9,7 +9,7 @@ python -m model.fazzon.prepare                  # steps 0-2
 python -m model.fazzon.prepare --skip-download  # reuse <normalized>/fazzon/ (steps 2 only)
 python -m model.fazzon.prepare --refresh        # download the data-lake files again
 python -m model.fazzon.prepare --upload         # also log the reference datasets to the platform
-python -m model.fazzon.analyze_new_data         # exploratory analysis and plots (Italian labels)
+python -m model.fazzon.exploratory_analysis     # exploratory analysis and plots (Italian labels)
 ```
 
 | Step | Module | Input | Output |
@@ -20,7 +20,7 @@ python -m model.fazzon.analyze_new_data         # exploratory analysis and plots
 | 3 Upload | `utils.remote.log_dataframe` | reference datasets | platform dataitems (`--upload`) |
 
 * **Sources** (`fazzon.yaml`): each source has its data-lake key and its local path. With
-  `local_source_dir` set (the default until the Fazzon files are uploaded, see `PLAN.md`) the
+  `local_source_dir` set (the default until the Fazzon files are uploaded to the data lake) the
   files are read in place; otherwise they are streamed from the data lake to
   `Output/data/raw_data/fazzon/`. As in the main pipeline only the data lake is read: the
   measured weather (Male' station, T0074) is fetched from the Meteotrentino open-data service
@@ -50,6 +50,8 @@ data folder (`FAZZON_DATA_DIR`, e.g. `<repo>/data_preparation/Output/data/final_
 local run), or downloads them from the platform at startup; it has no built-in values. See
 `executor-backend/src/model/fazzon/fazzon_data.py` and `docs/howto/backend.md` (Model API data).
 
-Every decision and assumption, with its evidence and where it is used: `ASSUMPTIONS.md` (the
-code refers to its IDs). Questions still open with the domain experts: `OPEN_QUESTIONS.md`.
+Every decision and assumption, with its evidence, status (e.g. "to validate" with the domain
+experts) and where it is used: `ASSUMPTIONS.md` (the code refers to its IDs). The exploratory
+analysis writes its tables and plots to `data/analysis_output/` (not versioned). `local-docs/`
+holds local working notes and is never versioned.
 Tests: `tests/test_fazzon_pipeline.py` (synthetic fixtures, no data needed).
