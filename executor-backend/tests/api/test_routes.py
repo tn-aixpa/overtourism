@@ -368,9 +368,12 @@ def test_download_data_failure_returns_502(monkeypatch) -> None:
     assert "platform unreachable" in response.json()["detail"]
 
 
-def test_download_data_unknown_or_without_data() -> None:
+def test_download_data_unknown_or_without_data(monkeypatch) -> None:
+    from src.api import registry
+
     client = TestClient(app)
     assert client.post("/models/nope/download-data").status_code == 404
+    monkeypatch.delitem(registry.DATA_DOWNLOADERS, "molveno")
     assert client.post("/models/molveno/download-data").status_code == 404
 
 

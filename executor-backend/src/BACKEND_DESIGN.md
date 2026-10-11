@@ -313,7 +313,7 @@ Each model package contains:
 |---|---|
 | `<model>_model.py` | The model definition itself — `civic_digital_twins` sub-models, the root `Model` class, `default_inputs()`. |
 | `<model>_backend.py` | `FazzonBackend`/`MolvenoBackend` — the frontend-agnostic evaluation entry point. |
-| `<model>_presence_stats.py` | Calibration data (presence distributions by context) as plain Python. |
+| `<model>_presence_stats.py` | Presence distributions by context, built from the statistics of the model's data-preparation pipeline (`<model>_data.py`: location, download, startup check). |
 | `fazzon_scenarios.py` (Fazzon only) | Catalogue of named what-if scenarios, expressed against live `Index` objects. |
 
 Each backend also carries `MAPPER`/`X_AXIS_NAME`/`Y_AXIS_NAME`/`X_FIELD`/
@@ -395,12 +395,13 @@ contract by convention (§Layer 3), so one generic route set parameterized by
 | `GET /models` | Registry catalogue: `[{key, title}, ...]`. |
 | `GET /models/{model_key}/schema` | `ModelSchema` — full presentation metadata built from the backend's minimal set, plus `indexes`. |
 | `POST /models/{model_key}/evaluate?as_snapshot=true` | `{param_overrides: {...}}` → evaluation result. |
-| `POST /models/{model_key}/download-data` | Downloads the model's data files from the platform again (currently Fazzon only; 404 for models without downloadable data) and drops the cached backend, so the next request uses the new data. `200 {message, data_dir}`; `502` if the download fails (the current files stay in place). Not authenticated: the wrapping layers must restrict it to administrators. |
+| `POST /models/{model_key}/download-data` | Downloads the model's data files from the platform again (Fazzon and Molveno; 404 for models without downloadable data) and drops the cached backend, so the next request uses the new data. `200 {message, data_dir}`; `502` if the download fails (the current files stay in place). Not authenticated: the wrapping layers must restrict it to administrators. |
 
-Models with data files (`src.api.registry.DATA_STARTUP`, currently Fazzon) are checked at startup (FastAPI
+Models with data files (`src.api.registry.DATA_STARTUP`: Fazzon, Molveno) are checked at startup (FastAPI
 lifespan): unless `DT_OVERTURISM_STANDALONE_MODE=true` (the default) the files are downloaded from the platform
 project `PROJECT_NAME`; missing files or a failed download stop the startup. See
-`src.model.fazzon.fazzon_data` and `docs/howto/backend.md` (Model API data).
+`src.model.common.model_data` (shared by `fazzon_data` and `molveno_data`) and `docs/howto/backend.md`
+(Model API data).
 
 `GET /schema` no longer returns `backend.schema()` unchanged.
 `src.api.routes._build_metadata()` takes the backend's
@@ -491,8 +492,8 @@ shell (`dashboard/adapter.py`, `dashboard/app.py`) doesn't import
   uv run streamlit run src/dt_studio/molveno_dashboard.py
   ```
 
-  (from the `executor-backend` folder; the Fazzon model needs its data in
-  `FAZZON_DATA_DIR`, see `docs/howto/backend.md`).
+  (from the `executor-backend` folder; the models need their data in
+  `FAZZON_DATA_DIR` / `MOLVENO_DATA_DIR`, see `docs/howto/backend.md`).
 
 - `src/dt_studio/dashboard/http_adapter.py` +
   `fazzon_api_dashboard.py` / `molveno_api_dashboard.py` — the same

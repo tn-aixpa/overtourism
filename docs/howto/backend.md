@@ -27,23 +27,30 @@ necessary to specify the project from which the data items and artefacts should 
 
 ### Model API data
 
-The Model API also needs data on startup: the Fazzon model reads two dataitems produced by the Fazzon
-data-preparation pipeline, `fazzon_presence_stats.parquet` (presence statistics) and `fazzon_modal_shift.parquet`
-(behaviour parameters of the access policy) (`data_preparation/model/fazzon`). It has no built-in values: **the Model API does not
-start without them**. The same variables as above apply, set on the Model API:
+The Model API also needs data on startup: each model reads the dataitems produced by its data-preparation
+pipeline and has no built-in values, so **the Model API does not start without them**:
+
+| Model | Dataitems | Pipeline |
+|-------|-----------|----------|
+| Fazzon | `fazzon_presence_stats.parquet` (presence statistics), `fazzon_modal_shift.parquet` (behaviour parameters of the access policy) | `data_preparation/model/fazzon` |
+| Molveno | `molveno_presence_stats.parquet` (presence statistics per summer day, gradient boosting), `molveno_presence_stats_monthly.parquet` (monthly comparison statistics), `molveno_weather_freq.parquet` (weather class frequencies) | `data_preparation/model/molveno` |
+
+The same variables as above apply, set on the Model API:
 
 - `DT_OVERTURISM_STANDALONE_MODE=true` (default): the files must already be in the data folder.
 - `DT_OVERTURISM_STANDALONE_MODE=false`: the files are downloaded from the platform project `PROJECT_NAME` at
   startup (platform credentials needed, as for the CRUD API), unless they are already in the data folder.
 
-The data folder is `FAZZON_DATA_DIR`, or `executor-backend/database/fazzon` if unset. A failed download stops
-the startup. `POST /models/fazzon/download-data` downloads the files again on demand (see the
+The data folder of each model is `FAZZON_DATA_DIR` / `MOLVENO_DATA_DIR`, or `executor-backend/database/<model>`
+if unset. A failed download stops the startup. `POST /models/<model>/download-data` downloads the files again on
+demand (see the
 [Model API endpoints](../../executor-backend/src/BACKEND_DESIGN.md#layer-5--rest-api)); like the rest of the Model
 API it is not authenticated, so the CRUD API should expose it only to administrators.
 
-For a local run, point `FAZZON_DATA_DIR` at the pipeline output, e.g.
-`FAZZON_DATA_DIR=<repo>/data_preparation/Output/data/final_data/fazzon` after
-`python -m model.fazzon.prepare` (run from `data_preparation`).
+For a local run, point the variables at the pipeline outputs, e.g.
+`FAZZON_DATA_DIR=<repo>/data_preparation/Output/data/final_data/fazzon` and
+`MOLVENO_DATA_DIR=<repo>/data_preparation/Output/data/final_data/molveno` after
+`python -m model.fazzon.prepare` and `python -m model.molveno.prepare` (run from `data_preparation`).
 
 ## Local execution
 
@@ -72,6 +79,7 @@ cd executor-backend
 uv sync
 source .venv/bin/activate
 FAZZON_DATA_DIR=../data_preparation/Output/data/final_data/fazzon \
+MOLVENO_DATA_DIR=../data_preparation/Output/data/final_data/molveno \
     fastapi run --host 127.0.0.1 --port 8001 src/api/main.py
 ```
 
@@ -111,6 +119,7 @@ Set `CORS_ALLOWED_ORIGINS` on both API processes. Set the other variables on the
 | `OVERTOURISM_DATABASE` | Optional locally; set to a persistent database in deployment. | SQLAlchemy database URL; defaults to a SQLite file under `overtourism/overtourism/database/`. |
 | `MODEL_BACKEND_USER`, `MODEL_BACKEND_PASSWORD` | Only if an upstream proxy requires HTTP Basic authentication. | The CRUD API sends Basic credentials only when both are set. The Model API itself does not validate them. |
 | `FAZZON_DATA_DIR` | Model API; optional. | Folder of the Fazzon model data; defaults to `executor-backend/database/fazzon`. |
+| `MOLVENO_DATA_DIR` | Model API; optional. | Folder of the Molveno model data; defaults to `executor-backend/database/molveno`. |
 
 The data-related settings `DT_OVERTURISM_STANDALONE_MODE` and `PROJECT_NAME` are described in [Configuration](#configuration);
 they apply to both APIs (see [Model API data](#model-api-data)).
@@ -136,10 +145,12 @@ docker run -d --rm --name overtourism-model --network overtourism \
     -e CORS_ALLOWED_ORIGINS \
     -v "$PWD/../data_preparation/Output/data/final_data/fazzon:/data/fazzon:ro" \
     -e FAZZON_DATA_DIR=/data/fazzon \
+    -v "$PWD/../data_preparation/Output/data/final_data/molveno:/data/molveno:ro" \
+    -e MOLVENO_DATA_DIR=/data/molveno \
     overtourism-model
 ```
 
-The Model API needs the Fazzon data (see [Model API data](#model-api-data)): mount it as above, or run with
+The Model API needs the model data (see [Model API data](#model-api-data)): mount it as above, or run with
 `-e DT_OVERTURISM_STANDALONE_MODE=false -e PROJECT_NAME` and platform credentials to download it at startup.
 
 Wait for `curl --fail http://127.0.0.1:8001/health/ready` to return `200`. In another terminal, from the repository root, build and run the CRUD API. Export `CORS_ALLOWED_ORIGINS`, the OIDC variables, and a persistent `OVERTOURISM_DATABASE` URL before starting it:

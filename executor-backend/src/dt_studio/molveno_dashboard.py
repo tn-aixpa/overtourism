@@ -30,39 +30,39 @@ from src.model.molveno.molveno_backend import MolvenoBackend
 _MOLVENO_SCENARIOS: list[dict[str, Any]] = [
     {
         "key": "typical",
-        "label": "Giorno tipico (media stagionale)",
+        "label": "Giorno tipico (tutta l'estate)",
         "category": "Riferimento",
         "description": (
-            "Nessun vincolo contestuale: media ponderata su tutti i giorni della settimana, "
-            "tutte le stagioni e tutte le condizioni meteo secondo le frequenze storiche."
+            "Nessun vincolo contestuale: tutti i giorni dell'estate (1° giugno – 30 settembre), "
+            "tutti i giorni della settimana e il meteo secondo le frequenze osservate."
         ),
         "overrides": {},
     },
     {
-        "key": "peak_summer_saturday",
-        "label": "Sabato picco estivo (buon tempo)",
+        "key": "peak_august_sunday",
+        "label": "Domenica di agosto (bel tempo)",
         "category": "Scenari estremi",
         "description": (
-            "Condizioni di massima affluenza: stagione 'very high', sabato, meteo buono. "
-            "Tipico di luglio–agosto con sole."
+            "Condizioni di massima affluenza: 1–25 agosto, domenica, meteo 'good'."
         ),
-        "overrides": {"season": "very high", "weekday": "saturday", "weather": "good"},
+        "overrides": {"day of summer": (61.0, 86.0), "weekday": "sunday", "weather": "good"},
     },
     {
-        "key": "rainy_day",
-        "label": "Giornata di pioggia (estate)",
+        "key": "rainy_august_sunday",
+        "label": "Domenica di agosto con pioggia",
         "category": "Scenari estremi",
         "description": (
-            "Stagione 'very high', sabato, meteo 'bad'. La spiaggia si svuota e la ristorazione è satura."
+            "1–25 agosto, domenica, meteo 'rainy': calano gli escursionisti, la spiaggia si "
+            "svuota e la ristorazione ne assorbe una quota maggiore."
         ),
-        "overrides": {"season": "very high", "weekday": "saturday", "weather": "bad"},
+        "overrides": {"day of summer": (61.0, 86.0), "weekday": "sunday", "weather": "rainy"},
     },
     {
-        "key": "low_season_weekday",
-        "label": "Giorno feriale bassa stagione",
+        "key": "early_june_weekday",
+        "label": "Giorno feriale di inizio giugno",
         "category": "Riferimento",
-        "description": "Stagione 'low', lunedì, meteo buono: condizioni di bassa pressione.",
-        "overrides": {"season": "low", "weekday": "monday", "weather": "good"},
+        "description": "1–15 giugno, lunedì, meteo 'good': condizioni di bassa pressione.",
+        "overrides": {"day of summer": (0.0, 15.0), "weekday": "monday", "weather": "good"},
     },
 ]
 
@@ -103,7 +103,7 @@ class MolvenoAdapter(OvertourismAdapter):
 
             # Apply the scenario's CV overrides by matching index name suffixes
             for cv_key, cv_val in s["overrides"].items():
-                # cv_key is a short label ("season", "weekday", "weather")
+                # cv_key is a short label ("day of summer", "weekday", "weather", ...)
                 matching = next(
                     (name for name in spec_map if cv_key in name),
                     None,

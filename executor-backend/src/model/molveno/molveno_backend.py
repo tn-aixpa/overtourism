@@ -30,6 +30,13 @@ from src.model.common.sustainability_field import (
     compute_sustainability_field,
 )
 from src.model.molveno.molveno_model import MolvenoModel
+from src.model.molveno.molveno_presence_stats import (
+    DAY_INDEX_NAME,
+    ESTIMATOR_ML,
+    ESTIMATORS,
+    load_tables,
+    weather_weights,
+)
 
 
 def _presence_transformation(
@@ -75,19 +82,32 @@ class MolvenoBackend:
     # TODO: check: are thesepointers really needed?
     X_FIELD = "tourist"
     Y_FIELD = "excursionist"
+    # Days of the period sampled per weekday x weather combination: for the field and for
+    # the scatter-plot presence samples.
+    FIELD_DAYS_PER_COMBO = 6
+    SAMPLE_DAYS_PER_COMBO = 20
 
-    def __init__(self) -> None:
+    def __init__(self, presence_estimator: str = ESTIMATOR_ML) -> None:
+        """*presence_estimator*: the presence statistics used (D9): ``ESTIMATOR_ML`` (gradient
+        boosting per day, the default) or ``ESTIMATOR_MONTHLY`` (monthly averages, for
+        comparison). A backend choice, not a scenario parameter: not in the schema."""
+        if presence_estimator not in ESTIMATORS:
+            raise ValueError(f"Unknown presence estimator {presence_estimator!r}; expected one of {ESTIMATORS}")
+        self._presence_estimator = presence_estimator
         model = MolvenoModel(inputs=MolvenoModel.default_inputs())
         self._model = model
+        self._tables = load_tables()
         self._index_map: dict[str, Any] = {idx.name: idx for idx in model.indexes}
         self._parameter_axes = [model.inputs.pv_tourists, model.inputs.pv_excursionists]
         # Grid-resolution: structural axis choices, not per-evaluation config.
         self._t_max, self._e_max = 10000, 10000
         self._t_sample, self._e_sample = 100, 100
+        # Categorical combinations: 7 weekdays x 3 weather classes (estimator fixed); each
+        # combination is replicated with different days of the period and capacities.
         self._config = OvertourismEvaluationConfig(
-            ensemble_size=84,  # 7 weekdays x 4 seasons x 3 weather
+            ensemble_size=7,
             ensemble_seed=0,
-            n_samples_per_combo=1,
+            n_samples_per_combo=self.FIELD_DAYS_PER_COMBO,
             sample_seed=1,
             target_presence_samples=2000,
             confidence=0.8,
@@ -120,15 +140,45 @@ class MolvenoBackend:
         }
 
     def evaluate(self, param_overrides: dict[str, Any]) -> SustainabilityFieldOutput:
-        """Evaluate the model under the given string-keyed parameter overrides."""
+        """Evaluate the model under the given string-keyed parameter overrides.
+
+        The period (day of the summer) is a ``[first, end]`` range: the days from
+        ``first`` to ``end`` (excluded); an empty range is widened to one day.
+        """
+        params = dict(param_overrides)
+        period = params.get(DAY_INDEX_NAME)
+        if period is not None:
+            first, end = (float(v) for v in period)
+            params[DAY_INDEX_NAME] = (first, max(end, first + 1.0))
         scenario = build_scenario(
             self._model,
-            param_overrides,
+            params,
             self._index_map,
             self._schema,
             self._parameter_axes,
         )
-        return self._evaluate_scenario(scenario)
+        return self._evaluate_scenario(self._with_period(scenario))
+
+    def period(self, scenario: Scenario) -> tuple[float, float]:
+        """``(first, end)`` of the period of *scenario* (default: the whole summer)."""
+        dist = scenario.overrides.get(self._model.inputs.i_day_of_summer)
+        if dist is None:
+            return 0.0, float(self._tables.n_days)
+        loc, scale = float(dist.kwds.get("loc", 0.0)), float(dist.kwds.get("scale", 1.0))
+        return loc, loc + scale
+
+    def _with_period(self, scenario: Scenario) -> Scenario:
+        """Fix the presence estimator of the backend (D9) and, unless the scenario fixes the
+        weather, weight the weather classes by the months of the period (A5)."""
+        inp = self._model.inputs
+        overrides = dict(scenario.overrides)
+        overrides[inp.cv_presence_estimator] = self._presence_estimator
+        if inp.cv_weather not in overrides:
+            first, end = self.period(scenario)
+            overrides[inp.cv_weather] = weather_weights(
+                self._tables, int(np.floor(first)), int(np.ceil(end))
+            )
+        return Scenario(self._model, overrides=overrides, parameter_axes=self._parameter_axes)
 
     def arrange_data(self, output: SustainabilityFieldOutput) -> dict[str, Any]:
         """Arrange Molveno output for the frontend presentation format."""
@@ -154,29 +204,39 @@ class MolvenoBackend:
                 label="Giorno della settimana",
                 description=(
                     "Filtra la valutazione a un singolo giorno della settimana. "
-                    "Il sabato registra la maggiore presenza di escursionisti."
+                    "La domenica registra la maggiore presenza di escursionisti "
+                    "(tranne in agosto, quando l'affluenza è alta tutti i giorni)."
                 ),
                 category="Contesto",
                 support=list(inp.cv_weekday.support),
             ),
-            inp.cv_season.name: OvertourismParameterMeta(
-                name=inp.cv_season.name,
-                kind="categorical",
-                label="Stagione",
+            inp.i_day_of_summer.name: OvertourismParameterMeta(
+                name=inp.i_day_of_summer.name,
+                kind="distribution",  # the period: the day is uniform over it (D9)
+                label="Periodo (giorni dal 1° giugno)",
                 description=(
-                    "Cluster stagionale: 'very high' = picco estivo (≈20% dei giorni), "
-                    "'high' ≈ 26%, 'mid' ≈ 29%, 'low' ≈ 24%."
+                    "Giorni dell'estate su cui è calcolata la valutazione, contati dal "
+                    "1° giugno: 0 = 1° giugno, 30 = 1° luglio, 61 = 1° agosto, "
+                    "92 = 1° settembre, 122 = fine settembre. Predefinito: tutta l'estate."
                 ),
                 category="Contesto",
-                support=list(inp.cv_season.support),
+                default_range=(0.0, float(self._tables.n_days)),
+                min_value=0.0,
+                max_value=float(self._tables.n_days),
+                step=1.0,
+                distribution_family="uniform",
+                distribution_fixed_params={},
             ),
             inp.cv_weather.name: OvertourismParameterMeta(
                 name=inp.cv_weather.name,
                 kind="categorical",
                 label="Meteo",
                 description=(
-                    "Con tempo 'bad' la ristorazione assorbe una maggiore quota "
-                    "di escursionisti."
+                    "Meteo del giorno: 'good', 'cool' (temperatura massima di oltre 2 °C "
+                    "sotto la media del mese) o 'rainy' (pioggia di almeno 5 mm). Senza "
+                    "selezione, le frequenze osservate nei mesi del periodo. Con tempo "
+                    "'rainy' calano gli escursionisti e la ristorazione ne assorbe una "
+                    "quota maggiore."
                 ),
                 category="Contesto",
                 support=list(inp.cv_weather.support),
@@ -417,12 +477,12 @@ class MolvenoBackend:
                 max_value=1.0,
                 step=0.01,
             ),
-            inp.i_u_excursionists_food_bad_weather.name: OvertourismParameterMeta(
-                name=inp.i_u_excursionists_food_bad_weather.name,
+            inp.i_u_excursionists_food_rainy_weather.name: OvertourismParameterMeta(
+                name=inp.i_u_excursionists_food_rainy_weather.name,
                 kind="scalar",
-                label="Percentuale di escursionisti che usano i ristoranti (maltempo)",
+                label="Percentuale di escursionisti che usano i ristoranti (pioggia)",
                 description=(
-                    "Frazione di escursionisti che usano i ristoranti con meteo 'bad'."
+                    "Frazione di escursionisti che usano i ristoranti con meteo 'rainy'."
                 ),
                 category="Ristoranti",
                 default=0.80,
@@ -430,13 +490,13 @@ class MolvenoBackend:
                 max_value=1.0,
                 step=0.01,
             ),
-            inp.i_u_excursionists_food_good_unsettled_weather.name: OvertourismParameterMeta(
-                name=inp.i_u_excursionists_food_good_unsettled_weather.name,
+            inp.i_u_excursionists_food_good_cool_weather.name: OvertourismParameterMeta(
+                name=inp.i_u_excursionists_food_good_cool_weather.name,
                 kind="scalar",
-                label="Percentuale di escursionisti che usano i ristoranti (tempo bello / variabile)",
+                label="Percentuale di escursionisti che usano i ristoranti (tempo bello / fresco)",
                 description=(
                     "Frazione di escursionisti che usano i ristoranti "
-                    "con meteo 'good' o 'unsettled'."
+                    "con meteo 'good' o 'cool'."
                 ),
                 category="Ristoranti",
                 default=0.40,
@@ -554,6 +614,7 @@ class MolvenoBackend:
         sampling_ensemble = CrossProductEnsemble(
             sampling_scenario,
             max_categorical_size=config.ensemble_size,
+            n_samples_per_combo=self.SAMPLE_DAYS_PER_COMBO,
             rng=np.random.default_rng(config.sample_seed),
         )
         pv_samples = sample_across(

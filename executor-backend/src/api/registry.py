@@ -18,6 +18,7 @@ from pathlib import Path
 from src.model.fazzon.fazzon_backend import FazzonBackend
 from src.model.fazzon.fazzon_data import download_fazzon_data, ensure_fazzon_data
 from src.model.molveno.molveno_backend import MolvenoBackend
+from src.model.molveno.molveno_data import download_molveno_data, ensure_molveno_data
 
 BACKEND_REGISTRY: dict[str, type[FazzonBackend | MolvenoBackend]] = {
     "fazzon": FazzonBackend,
@@ -33,9 +34,11 @@ MODEL_TITLES: dict[str, str] = {
 # (``overwrite=True``).  Both return the data folder and raise on failure.
 DATA_STARTUP: dict[str, Callable[[], Path]] = {
     "fazzon": ensure_fazzon_data,
+    "molveno": ensure_molveno_data,
 }
 DATA_DOWNLOADERS: dict[str, Callable[..., Path]] = {
     "fazzon": download_fazzon_data,
+    "molveno": download_molveno_data,
 }
 
 

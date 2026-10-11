@@ -1,118 +1,169 @@
-"""Presence stats required by the overtourism model."""
+"""Presence statistics of the Molveno model, read from the data-preparation pipeline.
+
+The statistics are the reference datasets of ``data_preparation/model/molveno`` (decision
+and assumption IDs refer to its ``ASSUMPTIONS.md``):
+
+* ``molveno_presence_stats``: per summer calendar day x weekday x weather class, the mean
+  and SD of tourists and excursionists estimated by gradient boosting (D9-D12);
+* ``molveno_presence_stats_monthly``: the same per month x weekday x weather class,
+  estimated by least squares (comparison, D9);
+* ``molveno_weather_freq``: per summer month, the frequency of each weather class (A5).
+
+In the model the day of the summer is a uniform distribution over the period of the
+scenario (D9); the presence estimator is a category, fixed by the backend.  There are no
+built-in values: missing files or cells raise an error.
+"""
 
 # SPDX-License-Identifier: Apache-2.0
+
+from __future__ import annotations
+
+import logging
+import math
+from dataclasses import dataclass
+from pathlib import Path
 
 import pandas as pd
 from scipy import stats
 
-season_stats = pd.DataFrame(
-    [
-        {
-            "cluster_name": "very high",
-            "freq_rel": 0.2065,
-            "mean_tourists": 4585.8421052631575,
-            "std_tourists": 600.7764663941985,
-            "mean_excursionists": 6001.631578947368,
-            "std_excursionists": 910.7123713839693,
-        },
-        {
-            "cluster_name": "high",
-            "freq_rel": 0.2609,
-            "mean_tourists": 4019.5416666666665,
-            "std_tourists": 425.7224018134318,
-            "mean_excursionists": 3653.0416666666665,
-            "std_excursionists": 790.854874784884,
-        },
-        {
-            "cluster_name": "mid",
-            "freq_rel": 0.2935,
-            "mean_tourists": 2915.1111111111113,
-            "std_tourists": 426.69213665965236,
-            "mean_excursionists": 2476.6296296296296,
-            "std_excursionists": 829.2709099957879,
-        },
-        {
-            "cluster_name": "low",
-            "freq_rel": 0.2391,
-            "mean_tourists": 1798.090909090909,
-            "std_tourists": 480.97192365250527,
-            "mean_excursionists": 1165.909090909091,
-            "std_excursionists": 480.7615891766995,
-        },
-    ]
-).set_index("cluster_name")
-
-weather_stats = pd.DataFrame(
-    [
-        [0.15, 140.30952381, 463.13601314, -773.23809524, 1187.05786413],
-        [0.20, 128.32142857, 319.20470369, 31.10714286, 824.51775728],
-        [0.65, 72.86263736, 406.09163233, 282.91208791, 839.91419686],
-    ],
-    columns=[
-        "freq_rel",
-        "mean_tourists",
-        "std_tourists",
-        "mean_excursionists",
-        "std_excursionists",
-    ],
-    index=["bad", "unsettled", "good"],
+from .molveno_data import (
+    MONTHLY_STATS_FILE,
+    PRESENCE_STATS_FILE,
+    WEATHER_FREQ_FILE,
+    molveno_data_dir,
 )
 
-weekday_stats = pd.DataFrame(
-    [
-        [-362.65934066, 112.47000414, -391.15384615, 791.84158997],
-        [-265.34065934, 122.13648742, -352.27472527, 937.65181712],
-        [-147.92307692, 247.5534754, -465.62637363, 733.9652083],
-        [92.23076923, 233.81638923, -380.35164835, 779.58869239],
-        [678.05494505, 149.44551186, -232.91208791, 500.50732948],
-        [320.46938776, 204.41996226, 590.98979592, 797.28902804],
-        [-278.93406593, 193.01797188, 1240.27472527, 1149.59709071],
-    ],
-    columns=[
-        "mean_tourists",
-        "std_tourists",
-        "mean_excursionists",
-        "std_excursionists",
-    ],
-    index=[
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday",
-    ],
-)
+logger = logging.getLogger(__name__)
 
-season = {s: season_stats.loc[s, "freq_rel"] for s in season_stats.index}
-weather = {w: weather_stats.loc[w, "freq_rel"] for w in weather_stats.index}
-weekday = weekday_stats.index
+WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+WEATHERS = ("good", "cool", "rainy")
+PRESENCES = ("tourists", "excursionists")
+STAT_COLUMNS = tuple(f"{s}_{p}" for p in PRESENCES for s in ("mean", "std"))
+
+DAY_INDEX_NAME = "day of summer"
+ESTIMATOR_INDEX_NAME = "presence estimator"
+ESTIMATOR_ML = "gradient boosting"  # main statistics (D9)
+ESTIMATOR_MONTHLY = "monthly averages"  # comparison statistics (D9)
+ESTIMATORS = (ESTIMATOR_ML, ESTIMATOR_MONTHLY)
+TRUNCATION_SDS = 10.0  # upper truncation of the presence distributions, in SDs (lower: 0, D12)
 
 
-def tourist_presences_stats(weekday, season, weather):
-    """Return a truncated-normal distribution for tourist presences."""
-    mean = season_stats.loc[season, "mean_tourists"]
-    std2 = season_stats.loc[season, "std_tourists"] ** 2
-    mean += weather_stats.loc[weather, "mean_tourists"]
-    std2 += weather_stats.loc[weather, "std_tourists"] ** 2
-    mean += weekday_stats.loc[weekday, "mean_tourists"]
-    std2 += weekday_stats.loc[weekday, "std_tourists"] ** 2
-    std = std2 ** (1 / 2)
-    a = -mean / std
-    b = 10.0
-    return stats.truncnorm(a, b, loc=mean, scale=std)
+@dataclass(frozen=True)
+class MolvenoTables:
+    """The statistics, as lookup tables."""
+
+    daily: dict[tuple[int, str, str], tuple[float, ...]]  # (summer day, weekday, weather) -> STAT_COLUMNS
+    monthly: dict[tuple[int, str, str], tuple[float, ...]]  # (month, weekday, weather) -> STAT_COLUMNS
+    day_month: tuple[int, ...]  # summer day -> month
+    day_label: tuple[str, ...]  # summer day -> "MM-DD"
+    weather_freq: dict[int, dict[str, float]]  # month -> {weather: frequency}
+
+    @property
+    def n_days(self) -> int:
+        return len(self.day_month)
 
 
-def excursionist_presences_stats(weekday, season, weather):
-    """Return a truncated-normal distribution for excursionist presences."""
-    mean = season_stats.loc[season, "mean_excursionists"]
-    std2 = season_stats.loc[season, "std_excursionists"] ** 2
-    mean += weather_stats.loc[weather, "mean_excursionists"]
-    std2 += weather_stats.loc[weather, "std_excursionists"] ** 2
-    mean += weekday_stats.loc[weekday, "mean_excursionists"]
-    std2 += weekday_stats.loc[weekday, "std_excursionists"] ** 2
-    std = std2 ** (1 / 2)
-    a = -mean / std
-    b = 10.0
-    return stats.truncnorm(a, b, loc=mean, scale=std)
+def _read(folder: Path, name: str, columns: set[str]) -> pd.DataFrame:
+    path = folder / name
+    if not path.exists():
+        raise FileNotFoundError(f"Molveno statistics not found: {path}")
+    df = pd.read_parquet(path)
+    lacking = sorted(columns - set(df.columns))
+    if lacking:
+        raise ValueError(f"Molveno statistics {name}: missing columns {lacking}")
+    return df
+
+
+def _check_cells(name: str, keys: set, expected: set) -> None:
+    if keys != expected:
+        missing, extra = sorted(expected - keys)[:5], sorted(keys - expected)[:5]
+        raise ValueError(f"Molveno statistics {name}: cells missing {missing}, unexpected {extra}")
+
+
+def load_tables(data_dir: str | Path | None = None) -> MolvenoTables:
+    """Read and check the three statistics files from *data_dir* (default: the data folder)."""
+    folder = Path(data_dir) if data_dir is not None else molveno_data_dir()
+    daily = _read(folder, PRESENCE_STATS_FILE, {"summer_day", "month_day", "month", "weekday", "weather", *STAT_COLUMNS})
+    monthly = _read(folder, MONTHLY_STATS_FILE, {"month", "weekday", "weather", *STAT_COLUMNS})
+    freq = _read(folder, WEATHER_FREQ_FILE, {"month", "weather", "freq_rel"})
+
+    days = daily.drop_duplicates("summer_day").sort_values("summer_day")
+    if days["summer_day"].tolist() != list(range(len(days))):
+        raise ValueError("Molveno statistics: summer days are not consecutive from 0")
+    months = sorted(days["month"].unique())
+    _check_cells(PRESENCE_STATS_FILE, set(zip(daily["summer_day"], daily["weekday"], daily["weather"])),
+                 {(d, w, c) for d in range(len(days)) for w in WEEKDAYS for c in WEATHERS})
+    _check_cells(MONTHLY_STATS_FILE, set(zip(monthly["month"], monthly["weekday"], monthly["weather"])),
+                 {(m, w, c) for m in months for w in WEEKDAYS for c in WEATHERS})
+    _check_cells(WEATHER_FREQ_FILE, set(zip(freq["month"], freq["weather"])), {(m, c) for m in months for c in WEATHERS})
+    if ((daily[[f"std_{p}" for p in PRESENCES]] <= 0).any().any()
+            or (monthly[[f"std_{p}" for p in PRESENCES]] <= 0).any().any()):
+        raise ValueError("Molveno statistics: non-positive SD")
+
+    def table(df, key):
+        return {(int(k), w, c): tuple(float(v) for v in vals)
+                for k, w, c, *vals in df[[key, "weekday", "weather", *STAT_COLUMNS]].itertuples(index=False)}
+
+    weather_freq = {int(m): dict(zip(g["weather"], g["freq_rel"].astype(float))) for m, g in freq.groupby("month")}
+    logger.info("Molveno presence statistics loaded from %s", folder)
+    return MolvenoTables(
+        daily=table(daily, "summer_day"),
+        monthly=table(monthly, "month"),
+        day_month=tuple(int(m) for m in days["month"]),
+        day_label=tuple(days["month_day"]),
+        weather_freq=weather_freq,
+    )
+
+
+def summer_day(value: float, n_days: int) -> int:
+    """Day of the summer (0 = first day) of a sampled day value: the day it falls in."""
+    return min(max(math.floor(value), 0), n_days - 1)
+
+
+def _presence(mean: float, std: float):
+    """D12: normal, truncated at 0."""
+    return stats.truncnorm(-mean / std, TRUNCATION_SDS, loc=mean, scale=std)
+
+
+def make_presence_factories(tables: MolvenoTables):
+    """Return ``(tourist_presences_stats, excursionist_presences_stats)``: the distribution
+    factories of the presence indexes, keyed by the parents' names (weekday, weather, day of
+    summer, presence estimator)."""
+
+    def _cell(kwargs) -> tuple[float, ...]:
+        day = summer_day(kwargs[DAY_INDEX_NAME], tables.n_days)
+        key = (kwargs["weekday"], kwargs["weather"])
+        if kwargs[ESTIMATOR_INDEX_NAME] == ESTIMATOR_MONTHLY:
+            return tables.monthly[(tables.day_month[day], *key)]
+        return tables.daily[(day, *key)]
+
+    def tourist_presences_stats(**kwargs):
+        mean, std, *_ = _cell(kwargs)
+        return _presence(mean, std)
+
+    def excursionist_presences_stats(**kwargs):
+        *_, mean, std = _cell(kwargs)
+        return _presence(mean, std)
+
+    return tourist_presences_stats, excursionist_presences_stats
+
+
+def weather_weights(tables: MolvenoTables, first_day: int = 0, end_day: int | None = None) -> dict[str, float]:
+    """A5: frequency of the weather classes over the days ``first_day .. end_day - 1``: the
+    monthly frequencies weighted by the days of each month in the period."""
+    end_day = tables.n_days if end_day is None else end_day
+    days = range(max(first_day, 0), min(max(end_day, first_day + 1), tables.n_days))
+    weights = {c: sum(tables.weather_freq[tables.day_month[d]][c] for d in days) / len(days) for c in WEATHERS}
+    total = sum(weights.values())
+    return {c: w / total for c, w in weights.items()}
+
+
+def presence_inputs(data_dir: str | Path | None = None):
+    """Return ``(tables, weather_weights, tourist_presences_stats, excursionist_presences_stats)``.
+
+    Reads the reference datasets; called by ``MolvenoModel.default_inputs`` each time a model
+    is built, so a model built after a data download uses the new statistics.
+    """
+    tables = load_tables(data_dir)
+    tourists, excursionists = make_presence_factories(tables)
+    return tables, weather_weights(tables), tourists, excursionists
