@@ -145,6 +145,8 @@ class PlotData:
         Label of the active scenario (informational).
     scenario_description : str, optional
         Markdown description of the active scenario (informational).
+    extra_kpis : dict of {str: str}, optional
+        Model-specific KPIs to display, ``{label: formatted value}``.
     """
 
     field: np.ndarray
@@ -159,6 +161,7 @@ class PlotData:
     sustainability_by_constraint: dict[str, tuple[float, float]]
     modal_lines: dict[str, tuple[np.ndarray, np.ndarray]]
     constraint_labels: dict[str, str] = field(default_factory=dict)
+    extra_kpis: dict[str, str] = field(default_factory=dict)
     scenario_key: str = ""
     scenario_label: str = ""
     scenario_description: str = ""

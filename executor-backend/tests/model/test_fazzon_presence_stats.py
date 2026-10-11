@@ -206,11 +206,35 @@ def test_policy_moves_the_samples_and_scales_the_vehicles():
     base = backend.evaluate({})
     policy = backend.evaluate({"parking price (euro per vehicle)": 20.0, "shuttle buses": 2.0})
     assert np.mean(policy.samples_x) < 0.4 * np.mean(base.samples_x)
-    assert np.mean(policy.samples_y) > np.mean(base.samples_y)
+    # y = all visitors arriving: never below the car arrivals of the same day
+    assert all(y >= x for x, y in zip(policy.samples_x, policy.samples_y))
+    assert np.mean(np.subtract(policy.samples_y, policy.samples_x)) > np.mean(
+        np.subtract(base.samples_y, base.samples_x)
+    )
     i = 10
     assert policy.usage_fields["parking"][i, i] / base.usage_fields["parking"][i, i] == pytest.approx(2.5 / 3.5)
     # food depends on the people at the lake only, whatever they paid
     assert policy.usage_fields["food"][i, i] == pytest.approx(base.usage_fields["food"][i, i])
+
+
+def test_dropout_kpis():
+    """Potential visitors who do not arrive: none in 2025 conditions; the shuttle brings
+    back part of the visitors deterred by the price (A36)."""
+    from src.model.fazzon.fazzon_backend import FazzonBackend
+
+    backend = FazzonBackend()
+    price = {"parking price (euro per vehicle)": 20.0}
+    kpis = {
+        label: backend.evaluate(overrides).kpis
+        for label, overrides in (("2025", {}), ("price", price), ("lakebus", {**price, "shuttle buses": 2.0}))
+    }
+    assert kpis["2025"]["dropouts mean"]["value"] == 0
+    assert kpis["price"]["dropouts mean"]["value"] > kpis["lakebus"]["dropouts mean"]["value"] > 0
+    for k in kpis.values():
+        assert k["dropouts peak"]["value"] >= k["dropouts mean"]["value"]
+        assert 0 <= k["dropouts peak"]["share"] <= 100
+    august = backend.evaluate({**price, "season": "august"}).kpis
+    assert august["dropouts mean"]["value"] > kpis["price"]["dropouts mean"]["value"]
 
 
 def test_price_slider_is_converted_to_its_level():

@@ -83,6 +83,7 @@ def _build_metadata(minimal: dict[str, Any]) -> dict[str, Any]:
         "sustainability_level": "Sostenibilità complessiva",
         **constraint_kpis,
         "critical constraint": "Vincolo Critico",
+        **minimal.get("kpi_labels", {}),
     }
     return {
         "mapper": mapper,

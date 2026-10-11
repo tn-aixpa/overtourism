@@ -311,6 +311,8 @@ def test_get_fazzon_schema_returns_fazzon_frontend_metadata() -> None:
             "constraint level road": "Sostenibilità Viabilità",
             "constraint level food": "Sostenibilità Ristorazione",
             "critical constraint": "Vincolo Critico",
+            "dropouts mean": "Visitatori potenziali che non arrivano: media stagionale (persone/giorno)",
+            "dropouts peak": "Visitatori potenziali che non arrivano: giorni di picco (persone/giorno)",
         },
         "plot_mapper": {
             "monodimensional": {
@@ -326,8 +328,8 @@ def test_get_fazzon_schema_returns_fazzon_frontend_metadata() -> None:
                     "field": "visitors_car",
                 },
                 "y": {
-                    "label": "Visitatori arrivati con altri mezzi / giorno",
-                    "field": "visitors_other",
+                    "label": "Visitatori arrivati in totale / giorno",
+                    "field": "visitors_total",
                 },
             },
         },

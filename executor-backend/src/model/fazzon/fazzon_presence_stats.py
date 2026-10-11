@@ -196,6 +196,14 @@ def make_presence_factories(stats_table: pd.DataFrame, behaviour: dict[str, floa
         var = cell["std_other_visitors"] ** 2 + (cell["std_car_visitors"] * shifted) ** 2  # A32
         return _gamma(mean, var)
 
+    def total_arrivals_stats(**kwargs):
+        """All arrivals = car + non-car arrivals, taken as independent (A32): means and
+        variances add.  (The backend's scatter samples add a car and a non-car draw of the
+        same day instead, so that total >= car on every sampled day.)"""
+        car, other = car_arrivals_stats(**kwargs), other_arrivals_stats(**kwargs)
+        return _gamma(car.mean() + other.mean(), car.var() + other.var())
+
+    car_arrivals_stats.total = total_arrivals_stats  # see make_presence_factories
     return car_arrivals_stats, other_arrivals_stats
 
 
@@ -262,3 +270,62 @@ def behaviour_params(data_dir: str | Path | None = None) -> dict[str, float]:
     if missing:
         raise ValueError(f"Fazzon modal-shift parameters in {data_dir}: missing {missing}")
     return {p: float(values[(p, d)]) for p, d in BEHAVIOUR_PARAMETERS.items()}
+
+
+# ---------------------------------------------------------------------------
+# Dropouts: potential visitors who do not arrive (KPI)
+# ---------------------------------------------------------------------------
+
+DROPOUT_PEAK_QUANTILE = 0.95  # "maximum": the 95th percentile of the days (A36)
+
+
+def dropouts(
+    stats_table: pd.DataFrame,
+    behaviour: dict[str, float],
+    cell_weights: dict[tuple[str, str], float],
+    price: float,
+    capacity: float,
+    n_days: int = 20_000,
+    seed: int = 0,
+) -> dict[str, float]:
+    """Potential visitors who do not arrive, per day: season mean and peak (A36).
+
+    Days are drawn from the (season, weather) cells with *cell_weights*; on each day the car
+    demand in 2025 conditions is drawn from the cell's Gamma distribution, and
+
+        deterred  = demand × (1 - R(price))
+        riders    = min(deterred × shuttle share, capacity)     (cap per day)
+        dropouts  = deterred × (1 - walk-up share) - riders
+
+    i.e. the visitors deterred by the price who neither walk up nor find a seat on the
+    shuttle (A28, A34).  The potential visitors of a day are its car demand plus the
+    cell's non-car demand in proportion (A3).  Returns ``mean`` and ``share`` (mean
+    dropouts / mean potential visitors), ``peak`` (the ``DROPOUT_PEAK_QUANTILE`` of the
+    daily dropouts) and ``peak_share`` (dropouts / potential visitors over the days at or
+    above the peak).
+    """
+    rng = np.random.default_rng(seed)
+    cells = list(cell_weights)
+    weights = np.array([cell_weights[c] for c in cells], dtype=float)
+    weights = weights / weights.sum()
+    picked = rng.choice(len(cells), size=n_days, p=weights)
+    demand = np.empty(n_days)
+    potential = np.empty(n_days)
+    for k, cell in enumerate(cells):
+        mask = picked == k
+        row = stats_table.loc[cell]
+        mean, sd = float(row["mean_car_visitors"]), float(row["std_car_visitors"])
+        shape, scale = (mean / sd) ** 2, sd**2 / mean
+        demand[mask] = rng.gamma(shape, scale, size=int(mask.sum()))
+        potential[mask] = demand[mask] * (1.0 + float(row["mean_other_visitors"]) / mean)
+    deterred = demand * (1.0 - price_response(price, behaviour))
+    riders = np.minimum(deterred * behaviour["share_shuttle"], capacity)
+    lost = deterred * (1.0 - behaviour["share_walk_up"]) - riders
+    peak = float(np.quantile(lost, DROPOUT_PEAK_QUANTILE))
+    peak_days = lost >= peak
+    return {
+        "mean": float(lost.mean()),
+        "share": float(lost.mean() / potential.mean()),
+        "peak": peak,
+        "peak_share": float(lost[peak_days].sum() / potential[peak_days].sum()),
+    }

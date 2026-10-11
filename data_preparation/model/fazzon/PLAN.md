@@ -97,7 +97,8 @@ Tasks:
       categories of the arrival distributions, presence axes = arrivals by private vehicle /
       by other means (the policy moves the samples), persons per vehicle 2.5–3.5 (A2 replaces
       A1), car mode share removed, scenarios B/C reworked; shuttle capacity from the timetable
-      (buses, seats, interval, hours, morning peak; D16, A29–A35).
+      (buses, seats, interval, hours, morning peak; D16, A29–A35); y axis = all visitors
+      arriving (D17); dropout KPIs, season mean and peak days (D18, A36).
       Original list:
       - non-car visitors: 2026 bus counts are measured, so they replace the 0.31 ASSUMPTION
         for the shuttle part
@@ -145,7 +146,11 @@ Tasks:
       `b1_shuttle_only` and `b2_price_10`; the slider `shuttle daily vehicle passages` is
       replaced by the shuttle timetable parameters (`shuttle buses`, `shuttle seats per bus`,
       `shuttle interval (minutes)`, `shuttle first departure (hour)`, `shuttle end of service
-      (hour)`, `shuttle morning peak end (hour)`, `shuttle riders in the morning peak (share)`).
+      (hour)`, `shuttle morning peak end (hour)`, `shuttle riders in the morning peak (share)`);
+      y axis = all visitors arriving (field `visitors_total` instead of `visitors_other`, new
+      label, range 0–3000); new KPIs `dropouts mean` / `dropouts peak` (`{value: persons/day,
+      share: %}`, labels in `kpi_mapper`) via the new optional
+      `SustainabilityFieldOutput.extra_kpis`.
 
 ## Dependencies
 

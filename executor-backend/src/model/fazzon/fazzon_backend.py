@@ -33,6 +33,9 @@ from src.model.fazzon.fazzon_model import FazzonModel
 from src.model.fazzon.fazzon_presence_stats import (
     PRICE_INDEX_NAME,
     PRICE_LEVELS,
+    behaviour_params,
+    dropouts,
+    load_presence_stats,
     shuttle_capacity_level,
     shuttle_usable_capacity,
 )
@@ -65,22 +68,30 @@ class FazzonBackend:
     }
     # The axes are the arrivals under the access policy (D15): the policy moves the samples.
     X_AXIS_NAME = "Visitatori arrivati in auto / giorno"
-    Y_AXIS_NAME = "Visitatori arrivati con altri mezzi / giorno"
+    Y_AXIS_NAME = "Visitatori arrivati in totale / giorno"
     # TODO: check: are thesepointers really needed?
+    # Model-specific KPIs (SustainabilityFieldOutput.extra_kpis) and their display names
+    KPI_LABELS: ClassVar[dict[str, str]] = {
+        "dropouts mean": "Visitatori potenziali che non arrivano: media stagionale (persone/giorno)",
+        "dropouts peak": "Visitatori potenziali che non arrivano: giorni di picco (persone/giorno)",
+    }
     X_FIELD = "visitors_car"
-    Y_FIELD = "visitors_other"
+    Y_FIELD = "visitors_total"
 
     def __init__(self) -> None:
         model = FazzonModel(inputs=FazzonModel.default_inputs())
+        # Demand statistics and behaviour parameters, for the dropout KPIs
+        self._presence_stats = load_presence_stats()
+        self._behaviour = behaviour_params()
         self._model = model
         self._index_map: dict[str, Any] = {idx.name: idx for idx in model.indexes}
         self._parameter_axes = [
             model.inputs.pv_visitors_car,
-            model.inputs.pv_visitors_other,
+            model.inputs.pv_visitors_total,
         ]
         # Grid-resolution: structural axis choices, not per-evaluation config.
         # Non-car arrivals reach ~1600/day under a strong price policy (modal shift, D15).
-        self._c_max, self._o_max = 2000, 2000
+        self._c_max, self._o_max = 2000, 3000
         self._c_sample, self._o_sample = 100, 100
         self._config = OvertourismEvaluationConfig(
             ensemble_size=12,  # 4 seasons x 3 weather classes (D5, D7)
@@ -104,6 +115,7 @@ class FazzonBackend:
                 "y_axis_name": self.Y_AXIS_NAME,
                 "x_field": self.X_FIELD,
                 "y_field": self.Y_FIELD,
+                "kpi_labels": self.KPI_LABELS,
             },
             "indexes": self.parameter_schema(),
         }
@@ -325,7 +337,8 @@ class FazzonBackend:
         scenario = self._with_policy(scenario)
         model = self._model
         config = self._config
-        pv_car, pv_other = model.inputs.pv_visitors_car, model.inputs.pv_visitors_other
+        pv_car, pv_other = model.inputs.pv_visitors_car, model.inputs.pv_visitors_total
+        pv_noncar = model.inputs.pv_visitors_other
         cc = np.linspace(0, self._c_max, self._c_sample + 1)
         oo = np.linspace(0, self._o_max, self._o_sample + 1)
 
@@ -348,7 +361,7 @@ class FazzonBackend:
         )
         pv_samples = sample_across(
             sampling_ensemble,
-            [pv_car, pv_other],
+            [pv_car, pv_noncar],
             total=config.target_presence_samples,
             rng=np.random.default_rng(config.sample_seed),
         )
@@ -378,8 +391,38 @@ class FazzonBackend:
             x_values=cc,
             y_values=oo,
             samples_x=list(pv_samples[pv_car]),
-            samples_y=list(pv_samples[pv_other]),
+            # total = car + non-car draws of the same day (aligned by sample_across)
+            samples_y=list(pv_samples[pv_car] + pv_samples[pv_noncar]),
             usage_fields=usage_fields,
             capacity_distributions=capacity_distributions,
             confidence=config.confidence,
+            extra_kpis=self._dropout_kpis(scenario),
         )
+
+    def _dropout_kpis(self, scenario: Scenario) -> dict[str, dict[str, float]]:
+        """Potential visitors who do not arrive (A36), for the scenario's policy and for the
+        seasons / weather classes it allows (fixed or restricted categories)."""
+        inp = self._model.inputs
+        overrides = scenario.overrides
+
+        def allowed(idx) -> dict[str, float]:
+            weights = dict(idx.outcomes)
+            pin = overrides.get(idx)
+            if pin is None:
+                return weights
+            keep = [pin] if isinstance(pin, str) else list(pin)
+            return {k: weights[k] for k in keep}
+
+        seasons, weathers = allowed(inp.cv_season), allowed(inp.cv_weather)
+        cell_weights = {(s, w): ps * pw for s, ps in seasons.items() for w, pw in weathers.items()}
+        result = dropouts(
+            self._presence_stats,
+            self._behaviour,
+            cell_weights,
+            price=float(overrides[inp.cv_parking_price]),
+            capacity=float(overrides[inp.cv_shuttle]),
+        )
+        return {
+            "dropouts mean": {"value": round(result["mean"], 1), "share": round(result["share"] * 100, 2)},
+            "dropouts peak": {"value": round(result["peak"], 1), "share": round(result["peak_share"] * 100, 2)},
+        }

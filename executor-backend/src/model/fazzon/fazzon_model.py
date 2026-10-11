@@ -17,12 +17,10 @@ Sub-models:
 
 :class:`RoadModel`
     Daily vehicle passages (cars + shuttle buses) vs. effective road capacity
-    under semaphore control.  Computes a **road cascade factor** (in [0, 1])
-    and exposes it via ``Outputs.cascade_road`` for downstream sub-models.
+    under semaphore control.
 
 :class:`FoodModel`
-    Peak simultaneous diners (after road cascade) vs. total seat capacity
-    (4 venues, 520 seats).  Takes ``cascade_road`` from :class:`RoadModel`.
+    Peak simultaneous diners vs. total seat capacity (4 venues, 520 seats).
 
 :class:`FazzonModel`
     Root model — owns the CVs, two PVs, all ``i_*`` defaults, and wires the
@@ -201,15 +199,8 @@ class RoadModel(Model):
 
     The access road (4.3 km, single-lane with semaphore under shuttle operation) carries
     private vehicles and shuttle buses.  The daily vehicle passages are compared to an
-    effective road capacity (A13).
-
-    A **road cascade factor** is computed here and exposed via ``Outputs.cascade_road``
-    for downstream use in :class:`FoodModel`::
-
-        cascade_road = min(1, i_c_road / i_u_road)
-
-    When the road is not saturated the factor is 1.0; when saturated it represents the
-    fraction of intended visitors that can physically reach the lake.
+    effective road capacity (A13).  There is no road cascade on the other constraints:
+    the presence variables are arrivals, already at the lake (D19).
 
     Formula::
 
@@ -230,35 +221,18 @@ class RoadModel(Model):
         """Contractual outputs of :class:`RoadModel`."""
 
         i_u_road: Index
-        cascade_road: Index
 
     def compute(self, inputs: Inputs) -> Outputs:
-        """Compute road vehicle passages, cascade factor, and road constraint."""
+        """Compute road vehicle passages and the road constraint."""
         _road_vehicle_demand = (
             inputs.i_cars * inputs.i_xo_road_trips + inputs.i_shuttle_daily_trips
         )
         i_u_road = Index("road usage", _road_vehicle_demand)
 
-        # Cascade: fraction of visitors reaching the lake when road is saturated.
-        # 1e-10 guard: piecewise evaluates all branches eagerly in numpy; the
-        # ratio branch is only used when demand > capacity (> 0), so the
-        # denominator epsilon only matters at demand≈0 where the condition
-        # is False anyway — it prevents a RuntimeWarning there.
-        cascade_road = Index(
-            "road cascade factor",
-            graph.piecewise(
-                (
-                    inputs.i_c_road / (_road_vehicle_demand + 1e-10),
-                    _road_vehicle_demand > inputs.i_c_road,
-                ),
-                (1.0, True),
-            ),
-        )
-
         self.constraint = Constraint(
             name="road", usage=i_u_road, capacity=inputs.i_c_road
         )
-        return RoadModel.Outputs(i_u_road=i_u_road, cascade_road=cascade_road)
+        return RoadModel.Outputs(i_u_road=i_u_road)
 
 
 # ---------------------------------------------------------------------------
@@ -271,12 +245,12 @@ class FoodModel(Model):
     """Concern sub-model — daily restaurant demand at the 4 lake venues.
 
     Models peak simultaneous diners as a fraction of the visitors reaching the lake
-    (after road cascade), divided by the daily seat turnover.  The constraint is peak
+    (all arrivals, D19), divided by the daily seat turnover.  The constraint is peak
     simultaneous demand ≤ total seats (520).
 
     Formula::
 
-        visitors_at_lake = (pv_visitors_car + pv_visitors_other) * cascade_road
+        visitors_at_lake = pv_visitors_total
         i_u_food = visitors_at_lake * i_u_food_fraction / i_xo_food_sittings
     """
 
@@ -284,9 +258,7 @@ class FoodModel(Model):
     class Inputs:
         """Contractual inputs of :class:`FoodModel`."""
 
-        pv_visitors_car: ConditionalDistributionIndex
-        pv_visitors_other: ConditionalDistributionIndex
-        cascade_road: Index
+        pv_visitors_total: ConditionalDistributionIndex
         i_u_food_fraction: Index
         i_xo_food_sittings: Index
         i_c_seats: Index
@@ -298,8 +270,8 @@ class FoodModel(Model):
         i_u_food: Index
 
     def compute(self, inputs: Inputs) -> Outputs:
-        """Compute peak simultaneous diners after road cascade."""
-        visitors_at_lake = (inputs.pv_visitors_car + inputs.pv_visitors_other) * inputs.cascade_road
+        """Compute peak simultaneous diners."""
+        visitors_at_lake = inputs.pv_visitors_total
         i_u_food = Index(
             "food usage",
             visitors_at_lake * inputs.i_u_food_fraction / inputs.i_xo_food_sittings,
@@ -358,7 +330,8 @@ class FazzonModel(Model):
         cv_weather: CategoricalIndex
         # Presence distributions
         pv_visitors_car: ConditionalDistributionIndex
-        pv_visitors_other: ConditionalDistributionIndex
+        pv_visitors_total: ConditionalDistributionIndex
+        pv_visitors_other: ConditionalDistributionIndex  # sampling only (scatter)
         # Access policy (D15)
         cv_parking_price: CategoricalIndex
         cv_shuttle: CategoricalIndex
@@ -426,6 +399,14 @@ class FazzonModel(Model):
             [cv_season, cv_weather, cv_parking_price],
             car_visitors_stats,
         )
+        # Trial: y axis = all visitors arriving (car + other)
+        pv_visitors_total = ConditionalDistributionIndex(
+            "visitors_total",
+            policy,
+            car_visitors_stats.total,
+        )
+        # Non-car arrivals: not in the graph, used by the backend to sample the scatter
+        # (total = car + non-car draw of the same day)
         pv_visitors_other = ConditionalDistributionIndex(
             "visitors_other",
             policy,
@@ -438,6 +419,7 @@ class FazzonModel(Model):
             cv_parking_price=cv_parking_price,
             cv_shuttle=cv_shuttle,
             pv_visitors_car=pv_visitors_car,
+            pv_visitors_total=pv_visitors_total,
             pv_visitors_other=pv_visitors_other,
             # Shuttle: no bus in 2025 conditions (the Greenbus pilot only ran 28/06-20/07, D1).
             # 2026 Lakebus (A29): 2 buses x 30 seats, together every 30 min, 9-19.
@@ -533,9 +515,7 @@ class FazzonModel(Model):
         )
         food = FoodModel(
             inputs=FoodModel.Inputs(
-                pv_visitors_car=inputs.pv_visitors_car,
-                pv_visitors_other=inputs.pv_visitors_other,
-                cascade_road=road.outputs.cascade_road,
+                pv_visitors_total=inputs.pv_visitors_total,
                 i_u_food_fraction=inputs.i_u_food_fraction,
                 i_xo_food_sittings=inputs.i_xo_food_sittings,
                 i_c_seats=inputs.i_c_seats,
@@ -559,7 +539,6 @@ class FazzonModel(Model):
         self.i_shuttle_buses = inputs.i_shuttle_buses
         self.i_shuttle_daily_trips = i_shuttle_daily_trips
         # Computed indexes, exposed for inspection.
-        self.i_cascade_road = road.outputs.cascade_road
         self.i_cars = access.outputs.i_cars
         self.i_occupancy = access.outputs.i_occupancy
 
