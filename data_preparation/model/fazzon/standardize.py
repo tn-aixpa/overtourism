@@ -19,6 +19,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.csv as pacsv
 
+from model.common.weather import standardize_meteo_bulletin, standardize_meteo_station
 from model.fazzon.config import STATIONS_FILE
 
 logger = logging.getLogger(__name__)
@@ -159,26 +160,9 @@ def road_counts_daily(hourly: pd.DataFrame) -> pd.DataFrame:
 
 
 # ------------------------------------------------------------------ weather
-def standardize_meteo_station(path) -> pd.DataFrame:
-    """D11: Meteotrentino station series (data_download/download_meteo_meteotrentino.py) -> date, tmin,
-    tmax, rain_mm, quality code (as delivered; the codes are not documented: 145 from 2024, 1 in
-    2023, 81 on 4 days of 2023)."""
-    out = pd.read_csv(path)
-    out["date"] = pd.to_datetime(out["date"], format="%Y-%m-%d")
-    return out[["date", "tmin", "tmax", "rain_mm", "quality"]].sort_values("date").reset_index(drop=True)
-
-
-def standardize_meteo_bulletin(path, comune: str = "MALE'") -> pd.DataFrame:
-    """Meteotrentino bulletin per comune (rounded values, text description)."""
-    raw = pd.read_csv(path)
-    raw = raw[raw["comune"] == comune]
-    return pd.DataFrame({
-        "date": pd.to_datetime(raw["data"]).dt.normalize(),
-        "weather_desc": raw["meteo"],
-        "tmin": raw["tmin"],
-        "tmax": raw["tmax"],
-        "rain_mm": raw["pioggiamm"],
-    }).sort_values("date").reset_index(drop=True)
+# D11: Meteotrentino station T0074 (Male'); quality codes as delivered (not documented: 145 from
+# 2024, 1 in 2023, 81 on 4 days of 2023). Readers in model/common/weather.py.
+METEO_BULLETIN_COMUNE = "MALE'"
 
 
 # ------------------------------------------------------------------ Vodafone
@@ -263,7 +247,7 @@ def standardize_all(paths: dict[str, Path]) -> dict[str, pd.DataFrame]:
     tables["road_counts_daily"] = road_counts_daily(tables["road_counts_hourly"])
     logger.info("Weather...")
     tables["meteo_station"] = standardize_meteo_station(paths["meteo_station"])
-    tables["meteo_bulletin"] = standardize_meteo_bulletin(paths["meteo_bulletin"])
+    tables["meteo_bulletin"] = standardize_meteo_bulletin(paths["meteo_bulletin"], METEO_BULLETIN_COMUNE)
     logger.info("Vodafone...")
     tables["vodafone_presences"] = standardize_vodafone(paths["vodafone_attendences"], paths["vodafone_attendences_str"])
     logger.info("Bike counters and Guest Card...")
