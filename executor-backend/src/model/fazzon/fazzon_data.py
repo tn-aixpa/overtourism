@@ -39,7 +39,9 @@ def _validate(folder: Path) -> None:
     behaviour_params(folder)
 
 
-FAZZON_DATA = ModelData(model="fazzon", files=DATA_FILES, env_var=DATA_DIR_ENV, validate=_validate)
+FAZZON_DATA = ModelData(
+    model="fazzon", files=DATA_FILES, env_var=DATA_DIR_ENV, validate=_validate
+)
 DEFAULT_DATA_DIR = FAZZON_DATA.default_dir
 
 

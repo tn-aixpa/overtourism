@@ -81,7 +81,9 @@ def load_presence_stats(data_dir: str | Path | None = None) -> pd.DataFrame:
     df = pd.read_parquet(path)
     lacking = sorted({"season", "weather", *PRESENCE_STATS_COLUMNS} - set(df.columns))
     if lacking:
-        raise ValueError(f"Fazzon presence statistics in {data_dir}: missing columns {lacking}")
+        raise ValueError(
+            f"Fazzon presence statistics in {data_dir}: missing columns {lacking}"
+        )
     df = df.set_index(["season", "weather"])[list(PRESENCE_STATS_COLUMNS)]
     expected = {(s, w) for s in SEASONS for w in WEATHERS}
     if set(df.index) != expected:
@@ -104,8 +106,12 @@ def load_presence_stats(data_dir: str | Path | None = None) -> pd.DataFrame:
 PRICE_INDEX_NAME = "parking price (euro per vehicle)"
 SHUTTLE_INDEX_NAME = "shuttle capacity (riders per day)"
 PRICE_LEVELS: tuple[int, ...] = (5, 10, 15, 20, 25, 30, 35, 40)  # D15: 5-euro classes
-SHUTTLE_CAPACITY_STEP = 60  # D16: capacity classes of 60 riders (one run of the 2026 Lakebus)
-SHUTTLE_CAPACITY_LEVELS: tuple[int, ...] = tuple(range(0, 3600 + 1, SHUTTLE_CAPACITY_STEP))
+SHUTTLE_CAPACITY_STEP = (
+    60  # D16: capacity classes of 60 riders (one run of the 2026 Lakebus)
+)
+SHUTTLE_CAPACITY_LEVELS: tuple[int, ...] = tuple(
+    range(0, 3600 + 1, SHUTTLE_CAPACITY_STEP)
+)
 
 
 def shuttle_usable_capacity(
@@ -131,7 +137,9 @@ def shuttle_usable_capacity(
         return 0.0
     seats_per_run = buses * seats_per_bus
     daily = (end_hour - start_hour) * 60.0 / interval_min * seats_per_run
-    peak_runs = max(min(peak_end_hour, end_hour) - start_hour, 0.0) * 60.0 / interval_min
+    peak_runs = (
+        max(min(peak_end_hour, end_hour) - start_hour, 0.0) * 60.0 / interval_min
+    )
     if peak_share <= 0:
         return daily
     return min(daily, peak_runs * seats_per_run / peak_share)
@@ -178,22 +186,32 @@ def make_presence_factories(stats_table: pd.DataFrame, behaviour: dict[str, floa
     def _cell(kwargs):
         cell = stats_table.loc[(kwargs["season"], kwargs["weather"])]
         price = float(kwargs[PRICE_INDEX_NAME])
-        capacity = float(kwargs.get(SHUTTLE_INDEX_NAME, 0))  # not a parent of the car arrivals
+        capacity = float(
+            kwargs.get(SHUTTLE_INDEX_NAME, 0)
+        )  # not a parent of the car arrivals
         return cell, price_response(price, behaviour), capacity
 
     def car_arrivals_stats(**kwargs):
         cell, r, _ = _cell(kwargs)
-        return _gamma(cell["mean_car_visitors"] * r, (cell["std_car_visitors"] * r) ** 2)
+        return _gamma(
+            cell["mean_car_visitors"] * r, (cell["std_car_visitors"] * r) ** 2
+        )
 
     def other_arrivals_stats(**kwargs):
         cell, r, capacity = _cell(kwargs)
         deterred = cell["mean_car_visitors"] * (1.0 - r)
         shuttle_demand = deterred * behaviour["share_shuttle"]
-        riders = min(shuttle_demand, capacity)  # A33; A28: no shuttle -> capacity 0; A34: excess elsewhere
-        shuttle_part = riders / cell["mean_car_visitors"] if cell["mean_car_visitors"] > 0 else 0.0
+        riders = min(
+            shuttle_demand, capacity
+        )  # A33; A28: no shuttle -> capacity 0; A34: excess elsewhere
+        shuttle_part = (
+            riders / cell["mean_car_visitors"] if cell["mean_car_visitors"] > 0 else 0.0
+        )
         shifted = (1.0 - r) * behaviour["share_walk_up"] + shuttle_part
         mean = cell["mean_other_visitors"] + cell["mean_car_visitors"] * shifted
-        var = cell["std_other_visitors"] ** 2 + (cell["std_car_visitors"] * shifted) ** 2  # A32
+        var = (
+            cell["std_other_visitors"] ** 2 + (cell["std_car_visitors"] * shifted) ** 2
+        )  # A32
         return _gamma(mean, var)
 
     def total_arrivals_stats(**kwargs):
@@ -226,7 +244,10 @@ def presence_inputs(data_dir: str | Path | None = None):
         s: float(table.loc[(s, WEATHERS[0]), "season_freq_rel"]) for s in SEASONS
     }
     weather_weights = {
-        w: sum(season_weights[s] * float(table.loc[(s, w), "weather_freq_rel"]) for s in SEASONS)
+        w: sum(
+            season_weights[s] * float(table.loc[(s, w), "weather_freq_rel"])
+            for s in SEASONS
+        )
         for w in WEATHERS
     }
     total = sum(weather_weights.values())
@@ -264,11 +285,15 @@ def behaviour_params(data_dir: str | Path | None = None) -> dict[str, float]:
     df = pd.read_parquet(path)
     lacking = sorted({"parameter", "days", "estimate"} - set(df.columns))
     if lacking:
-        raise ValueError(f"Fazzon modal-shift parameters in {data_dir}: missing columns {lacking}")
+        raise ValueError(
+            f"Fazzon modal-shift parameters in {data_dir}: missing columns {lacking}"
+        )
     values = df.set_index(["parameter", "days"])["estimate"]
     missing = [p for p, d in BEHAVIOUR_PARAMETERS.items() if (p, d) not in values.index]
     if missing:
-        raise ValueError(f"Fazzon modal-shift parameters in {data_dir}: missing {missing}")
+        raise ValueError(
+            f"Fazzon modal-shift parameters in {data_dir}: missing {missing}"
+        )
     return {p: float(values[(p, d)]) for p, d in BEHAVIOUR_PARAMETERS.items()}
 
 
@@ -317,7 +342,9 @@ def dropouts(
         mean, sd = float(row["mean_car_visitors"]), float(row["std_car_visitors"])
         shape, scale = (mean / sd) ** 2, sd**2 / mean
         demand[mask] = rng.gamma(shape, scale, size=int(mask.sum()))
-        potential[mask] = demand[mask] * (1.0 + float(row["mean_other_visitors"]) / mean)
+        potential[mask] = demand[mask] * (
+            1.0 + float(row["mean_other_visitors"]) / mean
+        )
     deterred = demand * (1.0 - price_response(price, behaviour))
     riders = np.minimum(deterred * behaviour["share_shuttle"], capacity)
     lost = deterred * (1.0 - behaviour["share_walk_up"]) - riders

@@ -78,12 +78,16 @@ class ModelData:
 
         project_name = os.getenv("PROJECT_NAME", "overtourism")
         target.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=target.parent, prefix=f".{self.model}_download_") as tmp:
+        with tempfile.TemporaryDirectory(
+            dir=target.parent, prefix=f".{self.model}_download_"
+        ) as tmp:
             tmp_dir = Path(tmp)
             try:
                 project = dh.get_project(project_name)
                 for name in self.files:
-                    logger.info("Downloading dataitem %s from project %s", name, project_name)
+                    logger.info(
+                        "Downloading dataitem %s from project %s", name, project_name
+                    )
                     project.get_dataitem(name).download(str(tmp_dir), overwrite=True)
             except Exception as e:
                 raise RuntimeError(
@@ -91,7 +95,9 @@ class ModelData:
                 ) from e
             missing = self.missing_files(tmp_dir)
             if missing:
-                raise RuntimeError(f"{self.model} data download: files not received {missing}")
+                raise RuntimeError(
+                    f"{self.model} data download: files not received {missing}"
+                )
             self.validate(tmp_dir)  # raise if the new files are not usable
             for name in self.files:
                 shutil.move(str(tmp_dir / name), str(target / name))

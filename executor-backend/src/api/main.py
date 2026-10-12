@@ -17,17 +17,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.health import router as health_router
-from src.api.logging_config import service_log_format
+from src.api.logging_config import configure_logging
 from src.api.registry import DATA_STARTUP
 from src.api.routes import router
 
 APP_VERSION = "0.1.0"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format=service_log_format("executor-backend", APP_VERSION),
-    handlers=[logging.StreamHandler()],
-)
+configure_logging()
 
 
 def _get_cors_allowed_origins() -> list[str]:

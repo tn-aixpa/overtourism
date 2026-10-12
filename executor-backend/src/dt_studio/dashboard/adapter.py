@@ -33,7 +33,14 @@ from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
-__all__ = ["OvertourismAdapter", "ParameterSpec", "PlotData", "ScenarioDef", "format_extra_kpis"]
+__all__ = [
+    "OvertourismAdapter",
+    "ParameterSpec",
+    "PlotData",
+    "ScenarioDef",
+    "format_extra_kpis",
+]
+
 
 def format_extra_kpis(kpis: dict[str, Any], labels: dict[str, str]) -> dict[str, str]:
     """Return the quantity KPIs of *kpis* as ``{label: "value (share%)"}``.

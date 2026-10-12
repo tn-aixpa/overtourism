@@ -24,7 +24,11 @@ def test_format_extra_kpis_skips_the_standard_kpis() -> None:
 def test_index_diffs_use_the_support_labels() -> None:
     schema = {
         "indexes": [
-            {"name": "weekday", "kind": "categorical", "support_labels": {"saturday": "sabato"}},
+            {
+                "name": "weekday",
+                "kind": "categorical",
+                "support_labels": {"saturday": "sabato"},
+            },
             {"name": "season", "kind": "categorical"},
         ]
     }

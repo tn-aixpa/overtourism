@@ -18,7 +18,11 @@ DATA_DIR_ENV = "MOLVENO_DATA_DIR"
 PRESENCE_STATS_FILE = "molveno_presence_stats.parquet"
 MONTHLY_STATS_FILE = "molveno_presence_stats_monthly.parquet"
 WEATHER_FREQ_FILE = "molveno_weather_freq.parquet"
-DATA_FILES: tuple[str, ...] = (PRESENCE_STATS_FILE, MONTHLY_STATS_FILE, WEATHER_FREQ_FILE)
+DATA_FILES: tuple[str, ...] = (
+    PRESENCE_STATS_FILE,
+    MONTHLY_STATS_FILE,
+    WEATHER_FREQ_FILE,
+)
 
 
 def _validate(folder: Path) -> None:
@@ -27,7 +31,9 @@ def _validate(folder: Path) -> None:
     load_tables(folder)
 
 
-MOLVENO_DATA = ModelData(model="molveno", files=DATA_FILES, env_var=DATA_DIR_ENV, validate=_validate)
+MOLVENO_DATA = ModelData(
+    model="molveno", files=DATA_FILES, env_var=DATA_DIR_ENV, validate=_validate
+)
 
 
 def molveno_data_dir() -> Path:

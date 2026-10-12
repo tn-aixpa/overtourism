@@ -1,11 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+import re
 
-from overtourism.backend.utils.logging_config import service_log_format
+from overtourism.backend.utils.logging_config import (
+    LOG_DATE_FORMAT,
+    LOG_FORMAT,
+    configure_logging,
+)
 
 
-def test_service_log_format_includes_service_version_and_message() -> None:
+def test_logging_format_matches_requested_pattern() -> None:
     log_record = logging.LogRecord(
         name="overtourism.backend.main",
         level=logging.INFO,
@@ -14,11 +19,46 @@ def test_service_log_format_includes_service_version_and_message() -> None:
         msg="Backend started",
         args=(),
         exc_info=None,
+        func="create_app",
     )
-    formatter = logging.Formatter(service_log_format("backend-api", "2.0.0"))
+    log_record.threadName = "api-worker"
+    formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
 
     formatted_message = formatter.format(log_record)
 
-    assert "service=backend-api" in formatted_message
-    assert "version=2.0.0" in formatted_message
-    assert "Backend started" in formatted_message
+    assert re.fullmatch(
+        r"\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}\.\d{3} "
+        r"\[api-worker\] INFO  overtourism\.backend\.main\.create_app - Backend started",
+        formatted_message,
+    )
+
+
+def test_configure_logging_applies_format_to_uvicorn_handlers(monkeypatch) -> None:
+    logger_names = ("uvicorn", "uvicorn.error", "uvicorn.access")
+    loggers = {name: logging.getLogger(name) for name in logger_names}
+    root_logger = logging.getLogger()
+    for logger in loggers.values():
+        monkeypatch.setattr(logger, "handlers", [logging.StreamHandler()])
+
+    basic_config: dict[str, object] = {}
+    monkeypatch.setattr(
+        logging,
+        "basicConfig",
+        lambda **kwargs: basic_config.update(kwargs),
+    )
+
+    def get_test_logger(name: str | None = None) -> logging.Logger:
+        return root_logger if name is None else loggers[name]
+
+    monkeypatch.setattr(logging, "getLogger", get_test_logger)
+
+    configure_logging()
+
+    assert basic_config["level"] == logging.INFO
+    assert basic_config["format"] == LOG_FORMAT
+    assert basic_config["datefmt"] == LOG_DATE_FORMAT
+    for logger in loggers.values():
+        assert all(handler.formatter._fmt == LOG_FORMAT for handler in logger.handlers)
+        assert all(
+            handler.formatter.datefmt == LOG_DATE_FORMAT for handler in logger.handlers
+        )

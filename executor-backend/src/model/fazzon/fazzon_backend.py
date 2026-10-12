@@ -147,8 +147,13 @@ class FazzonBackend:
             self._parameter_axes,
         )
         if price is not None:
-            overrides = {**scenario.overrides, self._model.cv_parking_price: price_level(price)}
-            scenario = Scenario(self._model, overrides=overrides, parameter_axes=self._parameter_axes)
+            overrides = {
+                **scenario.overrides,
+                self._model.cv_parking_price: price_level(price),
+            }
+            scenario = Scenario(
+                self._model, overrides=overrides, parameter_axes=self._parameter_axes
+            )
         return self._evaluate_scenario(scenario)
 
     def _with_policy(self, scenario: Scenario) -> Scenario:
@@ -210,9 +215,9 @@ class FazzonBackend:
             inp.i_shuttle_buses.name: OvertourismParameterMeta(
                 name=inp.i_shuttle_buses.name,
                 kind="scalar",
-                label='Navetta: numero di bus',
-                description='Bus che partono insieme a ogni corsa. 0 = nessuna navetta. Lakebus 2026: 2.',
-                unit='bus',
+                label="Navetta: numero di bus",
+                description="Bus che partono insieme a ogni corsa. 0 = nessuna navetta. Lakebus 2026: 2.",
+                unit="bus",
                 category="Navetta",
                 default=0.0,
                 min_value=0.0,
@@ -222,9 +227,9 @@ class FazzonBackend:
             inp.i_shuttle_seats_per_bus.name: OvertourismParameterMeta(
                 name=inp.i_shuttle_seats_per_bus.name,
                 kind="scalar",
-                label='Navetta: posti per bus',
-                description='Posti a sedere di ogni bus. Lakebus 2026: 30.',
-                unit='posti',
+                label="Navetta: posti per bus",
+                description="Posti a sedere di ogni bus. Lakebus 2026: 30.",
+                unit="posti",
                 category="Navetta",
                 default=30.0,
                 min_value=10.0,
@@ -234,9 +239,9 @@ class FazzonBackend:
             inp.i_shuttle_interval_min.name: OvertourismParameterMeta(
                 name=inp.i_shuttle_interval_min.name,
                 kind="scalar",
-                label='Navetta: frequenza (minuti)',
-                description='Minuti fra due corse. Lakebus 2026: 30 (salita nei primi 15, discesa nei secondi 15).',
-                unit='min',
+                label="Navetta: frequenza (minuti)",
+                description="Minuti fra due corse. Lakebus 2026: 30 (salita nei primi 15, discesa nei secondi 15).",
+                unit="min",
                 category="Navetta",
                 default=30.0,
                 min_value=10.0,
@@ -246,9 +251,9 @@ class FazzonBackend:
             inp.i_shuttle_start_hour.name: OvertourismParameterMeta(
                 name=inp.i_shuttle_start_hour.name,
                 kind="scalar",
-                label='Navetta: prima corsa (ora)',
-                description='Ora della prima partenza da Pellizzano. Lakebus 2026: 9.',
-                unit='h',
+                label="Navetta: prima corsa (ora)",
+                description="Ora della prima partenza da Pellizzano. Lakebus 2026: 9.",
+                unit="h",
                 category="Navetta",
                 default=9.0,
                 min_value=6.0,
@@ -258,9 +263,9 @@ class FazzonBackend:
             inp.i_shuttle_end_hour.name: OvertourismParameterMeta(
                 name=inp.i_shuttle_end_hour.name,
                 kind="scalar",
-                label='Navetta: fine servizio (ora)',
+                label="Navetta: fine servizio (ora)",
                 description="Ora di fine servizio, cioè dell'ultimo rientro a Pellizzano. Lakebus 2026: 19 (ultima partenza 18:30).",
-                unit='h',
+                unit="h",
                 category="Navetta",
                 default=19.0,
                 min_value=14.0,
@@ -270,9 +275,9 @@ class FazzonBackend:
             inp.i_shuttle_peak_end_hour.name: OvertourismParameterMeta(
                 name=inp.i_shuttle_peak_end_hour.name,
                 kind="scalar",
-                label='Navetta: fine picco del mattino (ora)',
+                label="Navetta: fine picco del mattino (ora)",
                 description="I passeggeri si concentrano fra la prima corsa e quest'ora. ASSUNZIONE: 12.",
-                unit='h',
+                unit="h",
                 category="Navetta",
                 default=12.0,
                 min_value=10.0,
@@ -282,9 +287,9 @@ class FazzonBackend:
             inp.i_shuttle_peak_share.name: OvertourismParameterMeta(
                 name=inp.i_shuttle_peak_share.name,
                 kind="scalar",
-                label='Navetta: quota passeggeri nel picco',
-                description='Quota dei passeggeri che vuole salire nel picco del mattino: limita la capacità utilizzabile. ASSUNZIONE: 0.6 (da validare; dati 2026: al massimo 0.69).',
-                unit='',
+                label="Navetta: quota passeggeri nel picco",
+                description="Quota dei passeggeri che vuole salire nel picco del mattino: limita la capacità utilizzabile. ASSUNZIONE: 0.6 (da validare; dati 2026: al massimo 0.69).",
+                unit="",
                 category="Navetta",
                 default=0.6,
                 min_value=0.1,
@@ -418,7 +423,9 @@ class FazzonBackend:
             return {k: weights[k] for k in keep}
 
         seasons, weathers = allowed(inp.cv_season), allowed(inp.cv_weather)
-        cell_weights = {(s, w): ps * pw for s, ps in seasons.items() for w, pw in weathers.items()}
+        cell_weights = {
+            (s, w): ps * pw for s, ps in seasons.items() for w, pw in weathers.items()
+        }
         result = dropouts(
             self._presence_stats,
             self._behaviour,
@@ -427,6 +434,12 @@ class FazzonBackend:
             capacity=float(overrides[inp.cv_shuttle]),
         )
         return {
-            "dropouts mean": {"value": round(result["mean"], 1), "share": round(result["share"] * 100, 2)},
-            "dropouts peak": {"value": round(result["peak"], 1), "share": round(result["peak_share"] * 100, 2)},
+            "dropouts mean": {
+                "value": round(result["mean"], 1),
+                "share": round(result["share"] * 100, 2),
+            },
+            "dropouts peak": {
+                "value": round(result["peak"], 1),
+                "share": round(result["peak_share"] * 100, 2),
+            },
         }

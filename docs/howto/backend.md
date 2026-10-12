@@ -80,7 +80,8 @@ uv sync
 source .venv/bin/activate
 FAZZON_DATA_DIR=../data_preparation/Output/data/final_data/fazzon \
 MOLVENO_DATA_DIR=../data_preparation/Output/data/final_data/molveno \
-    fastapi run --host 127.0.0.1 --port 8001 src/api/main.py
+    uvicorn src.api.main:app --host 127.0.0.1 --port 8001 \
+        --proxy-headers --log-config uvicorn_log_config.json
 ```
 
 Wait for the Model API readiness probe to return `200`, then start the CRUD API in another terminal:
@@ -93,7 +94,9 @@ curl --fail http://127.0.0.1:8001/health/ready
 cd overtourism-backend
 uv sync
 source .venv/bin/activate
-MODEL_BACKEND_URL=http://127.0.0.1:8001 fastapi run --host 127.0.0.1 --port 8000 overtourism/overtourism/app.py
+MODEL_BACKEND_URL=http://127.0.0.1:8001 \
+    uvicorn overtourism.overtourism.app:app --host 127.0.0.1 --port 8000 \
+        --proxy-headers --log-config uvicorn_log_config.json
 ```
 
 ## Authentication flow

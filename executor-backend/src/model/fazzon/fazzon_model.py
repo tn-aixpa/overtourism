@@ -131,7 +131,10 @@ class AccessModel(Model):
     def compute(self, inputs: Inputs) -> Outputs:
         """Persons per vehicle at the price level, and the vehicles of the car arrivals."""
         price = graph.piecewise(
-            *[(float(level), inputs.cv_parking_price == str(level)) for level in PRICE_LEVELS],
+            *[
+                (float(level), inputs.cv_parking_price == str(level))
+                for level in PRICE_LEVELS
+            ],
             (float(PRICE_LEVELS[0]), True),
         )
         slope = (inputs.i_occupancy_high - inputs.i_occupancy_low) / (
@@ -380,9 +383,13 @@ class FazzonModel(Model):
         The presence statistics are read from the Fazzon data folder at every call
         (see :mod:`src.model.fazzon.fazzon_data`).
         """
-        season, weather, behaviour, car_visitors_stats, other_visitors_stats = presence_inputs()
+        season, weather, behaviour, car_visitors_stats, other_visitors_stats = (
+            presence_inputs()
+        )
         cv_season = CategoricalIndex("season", {s: season[s] for s in season})  # A14
-        cv_weather = CategoricalIndex("weather", {w: weather[w] for w in WEATHERS})  # D7, D13
+        cv_weather = CategoricalIndex(
+            "weather", {w: weather[w] for w in WEATHERS}
+        )  # D7, D13
         # D15: the policy categories are always fixed by the backend (FazzonBackend); their
         # weights only matter if a caller leaves them free, and then mix the levels.
         cv_parking_price = CategoricalIndex(
@@ -390,7 +397,10 @@ class FazzonModel(Model):
         )
         cv_shuttle = CategoricalIndex(
             SHUTTLE_INDEX_NAME,
-            {str(c): 1.0 / len(SHUTTLE_CAPACITY_LEVELS) for c in SHUTTLE_CAPACITY_LEVELS},
+            {
+                str(c): 1.0 / len(SHUTTLE_CAPACITY_LEVELS)
+                for c in SHUTTLE_CAPACITY_LEVELS
+            },
         )
         policy = [cv_season, cv_weather, cv_parking_price, cv_shuttle]
 
@@ -429,11 +439,19 @@ class FazzonModel(Model):
             i_shuttle_start_hour=Index("shuttle first departure (hour)", 9.0),
             # end of service = last return to Pellizzano (last departure 18:30)
             i_shuttle_end_hour=Index("shuttle end of service (hour)", 19.0),
-            i_shuttle_peak_end_hour=Index("shuttle morning peak end (hour)", 12.0),  # A35
-            i_shuttle_peak_share=Index("shuttle riders in the morning peak (share)", 0.6),  # A35
+            i_shuttle_peak_end_hour=Index(
+                "shuttle morning peak end (hour)", 12.0
+            ),  # A35
+            i_shuttle_peak_share=Index(
+                "shuttle riders in the morning peak (share)", 0.6
+            ),  # A35
             # Persons per vehicle, from the pipeline (fazzon_modal_shift, A2)
-            i_occupancy_low_price=Index("occupancy low price", behaviour["occupancy_low_price"]),
-            i_occupancy_low=Index("persons per vehicle at low price", behaviour["occupancy_low"]),
+            i_occupancy_low_price=Index(
+                "occupancy low price", behaviour["occupancy_low_price"]
+            ),
+            i_occupancy_low=Index(
+                "persons per vehicle at low price", behaviour["occupancy_low"]
+            ),
             i_occupancy_high_price=Index(
                 "occupancy high price", behaviour["occupancy_high_price"]
             ),

@@ -16,5 +16,5 @@ USER 8877
 
 EXPOSE 8001
 
-# Run the model-computation FastAPI application by default.
-ENTRYPOINT ["fastapi", "run", "--host", "0.0.0.0", "--port", "8001", "/app/src/api/main.py"]
+# Run the model-computation FastAPI application with the service log format.
+ENTRYPOINT ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8001", "--log-config", "/app/uvicorn_log_config.json"]

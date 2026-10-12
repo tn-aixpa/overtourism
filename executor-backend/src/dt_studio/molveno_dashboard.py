@@ -45,7 +45,11 @@ _MOLVENO_SCENARIOS: list[dict[str, Any]] = [
         "description": (
             "Condizioni di massima affluenza: 1–25 agosto, domenica, meteo 'good'."
         ),
-        "overrides": {"day of summer": (61.0, 86.0), "weekday": "sunday", "weather": "good"},
+        "overrides": {
+            "day of summer": (61.0, 86.0),
+            "weekday": "sunday",
+            "weather": "good",
+        },
     },
     {
         "key": "rainy_august_sunday",
@@ -55,14 +59,22 @@ _MOLVENO_SCENARIOS: list[dict[str, Any]] = [
             "1–25 agosto, domenica, meteo 'rainy': calano gli escursionisti, la spiaggia si "
             "svuota e la ristorazione ne assorbe una quota maggiore."
         ),
-        "overrides": {"day of summer": (61.0, 86.0), "weekday": "sunday", "weather": "rainy"},
+        "overrides": {
+            "day of summer": (61.0, 86.0),
+            "weekday": "sunday",
+            "weather": "rainy",
+        },
     },
     {
         "key": "early_june_weekday",
         "label": "Giorno feriale di inizio giugno",
         "category": "Riferimento",
         "description": "1–15 giugno, lunedì, meteo 'good': condizioni di bassa pressione.",
-        "overrides": {"day of summer": (0.0, 15.0), "weekday": "monday", "weather": "good"},
+        "overrides": {
+            "day of summer": (0.0, 15.0),
+            "weekday": "monday",
+            "weather": "good",
+        },
     },
 ]
 

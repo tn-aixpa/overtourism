@@ -336,7 +336,10 @@ class FoodModel(Model):
         i_u_excursionists_food = Index(
             "excursionist food service usage factor",
             graph.piecewise(
-                (inputs.i_u_excursionists_food_rainy_weather, inputs.cv_weather == "rainy"),
+                (
+                    inputs.i_u_excursionists_food_rainy_weather,
+                    inputs.cv_weather == "rainy",
+                ),
                 (inputs.i_u_excursionists_food_good_cool_weather, True),
             ),
         )
@@ -440,8 +443,12 @@ class MolvenoModel(Model):
             m = MolvenoModel(inputs=MolvenoModel.default_inputs())
         """
         # Statistics read from the data-preparation pipeline (molveno_presence_stats).
-        tables, weather, tourist_presences_stats, excursionist_presences_stats = presence_inputs()
-        cv_weekday = CategoricalIndex("weekday", {d: 1.0 / len(WEEKDAYS) for d in WEEKDAYS})
+        tables, weather, tourist_presences_stats, excursionist_presences_stats = (
+            presence_inputs()
+        )
+        cv_weekday = CategoricalIndex(
+            "weekday", {d: 1.0 / len(WEEKDAYS) for d in WEEKDAYS}
+        )
         cv_weather = CategoricalIndex("weather", weather)
         # D9: the day of the summer, uniform over the period of the scenario (default: the
         # whole summer); the presence estimator is fixed by the backend.
@@ -452,7 +459,9 @@ class MolvenoModel(Model):
             ESTIMATOR_INDEX_NAME, {e: 1.0 / len(ESTIMATORS) for e in ESTIMATORS}
         )
         parents = [cv_weekday, cv_weather, i_day_of_summer, cv_presence_estimator]
-        pv_tourists = ConditionalDistributionIndex("tourists", parents, tourist_presences_stats)
+        pv_tourists = ConditionalDistributionIndex(
+            "tourists", parents, tourist_presences_stats
+        )
         pv_excursionists = ConditionalDistributionIndex(
             "excursionists", parents, excursionist_presences_stats
         )

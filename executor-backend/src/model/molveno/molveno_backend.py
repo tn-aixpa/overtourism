@@ -93,7 +93,9 @@ class MolvenoBackend:
         boosting per day, the default) or ``ESTIMATOR_MONTHLY`` (monthly averages, for
         comparison). A backend choice, not a scenario parameter: not in the schema."""
         if presence_estimator not in ESTIMATORS:
-            raise ValueError(f"Unknown presence estimator {presence_estimator!r}; expected one of {ESTIMATORS}")
+            raise ValueError(
+                f"Unknown presence estimator {presence_estimator!r}; expected one of {ESTIMATORS}"
+            )
         self._presence_estimator = presence_estimator
         model = MolvenoModel(inputs=MolvenoModel.default_inputs())
         self._model = model
@@ -165,7 +167,10 @@ class MolvenoBackend:
         dist = scenario.overrides.get(self._model.inputs.i_day_of_summer)
         if dist is None:
             return 0.0, float(self._tables.n_days)
-        loc, scale = float(dist.kwds.get("loc", 0.0)), float(dist.kwds.get("scale", 1.0))
+        loc, scale = (
+            float(dist.kwds.get("loc", 0.0)),
+            float(dist.kwds.get("scale", 1.0)),
+        )
         return loc, loc + scale
 
     def _with_period(self, scenario: Scenario) -> Scenario:
@@ -179,7 +184,9 @@ class MolvenoBackend:
             overrides[inp.cv_weather] = weather_weights(
                 self._tables, int(np.floor(first)), int(np.ceil(end))
             )
-        return Scenario(self._model, overrides=overrides, parameter_axes=self._parameter_axes)
+        return Scenario(
+            self._model, overrides=overrides, parameter_axes=self._parameter_axes
+        )
 
     def arrange_data(self, output: SustainabilityFieldOutput) -> dict[str, Any]:
         """Arrange Molveno output for the frontend presentation format."""

@@ -401,7 +401,8 @@ choices about the axis grid, not per-evaluation quality knobs.
 **Location**: `overtourism/layer_3/api/`, run with:
 
 ```bash
-uv run fastapi run src/api/main.py --port 8001
+uv run uvicorn src.api.main:app --host 0.0.0.0 --port 8001 \
+  --proxy-headers --log-config uvicorn_log_config.json
 ```
 
 A REST layer over the Layer 3 backends. Depends only on
@@ -531,7 +532,8 @@ shell (`dashboard/adapter.py`, `dashboard/app.py`) doesn't import
   container split (see the Status note at the top of this document).
 
   ```bash
-  uv run fastapi run src/api/main.py --port 8001
+  uv run uvicorn src.api.main:app --host 0.0.0.0 --port 8001 \
+    --proxy-headers --log-config uvicorn_log_config.json
   uv run streamlit run src/dt_studio/fazzon_api_dashboard.py
   uv run streamlit run src/dt_studio/molveno_api_dashboard.py
   ```

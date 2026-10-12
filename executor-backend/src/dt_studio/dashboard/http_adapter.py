@@ -180,5 +180,7 @@ class HttpOvertourismAdapter(OvertourismAdapter):
                 for k, v in data["modal_lines"].items()
             },
             constraint_labels=constraint_labels,
-            extra_kpis=format_extra_kpis(data.get("kpis", {}), metadata.get("kpi_mapper", {})),
+            extra_kpis=format_extra_kpis(
+                data.get("kpis", {}), metadata.get("kpi_mapper", {})
+            ),
         )

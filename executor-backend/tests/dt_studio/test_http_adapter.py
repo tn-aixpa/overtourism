@@ -66,7 +66,9 @@ def _fake_api(evaluate_body: dict | None = None):
             "mapper": {"parking": "Parcheggi"},
             "color_map": [],
             "kpi_mapper": {"dropouts mean": "Rinunce: media"},
-            "plot_mapper": {"bidimensional": {"x": {"label": "X"}, "y": {"label": "Y"}}},
+            "plot_mapper": {
+                "bidimensional": {"x": {"label": "X"}, "y": {"label": "Y"}}
+            },
         },
         "indexes": [
             {
@@ -85,7 +87,9 @@ def _fake_api(evaluate_body: dict | None = None):
         def post(self, path: str, json: dict) -> FakeResponse:
             return FakeResponse(evaluate_body or {})
 
-    adapter = HttpOvertourismAdapter(model_key="fazzon", title="Fazzon", base_url="http://example.test")
+    adapter = HttpOvertourismAdapter(
+        model_key="fazzon", title="Fazzon", base_url="http://example.test"
+    )
     adapter._client = FakeClient()
     return adapter
 
@@ -108,7 +112,11 @@ def test_run_shows_model_specific_kpis() -> None:
         "modal_lines": {},
         "kpis": {
             "sustainability_level": {"level": 100.0, "confidence": 0.0},
-            "critical constraint": {"name": "parking", "level": 100.0, "confidence": 0.0},
+            "critical constraint": {
+                "name": "parking",
+                "level": 100.0,
+                "confidence": 0.0,
+            },
             "constraint level parking": {"level": 100.0, "confidence": 0.0},
             "dropouts mean": {"value": 632.6, "share": 12.47},
         },

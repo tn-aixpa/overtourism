@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from conftest import molveno_tables, write_molveno_stats
-
 from src.model.molveno import molveno_data
 from src.model.molveno.molveno_backend import MolvenoBackend
 from src.model.molveno.molveno_presence_stats import (
@@ -21,7 +20,12 @@ from src.model.molveno.molveno_presence_stats import (
 
 
 def _kwargs(day, weekday="wednesday", weather="good", estimator=ESTIMATOR_ML):
-    return {DAY_INDEX_NAME: day, "weekday": weekday, "weather": weather, ESTIMATOR_INDEX_NAME: estimator}
+    return {
+        DAY_INDEX_NAME: day,
+        "weekday": weekday,
+        "weather": weather,
+        ESTIMATOR_INDEX_NAME: estimator,
+    }
 
 
 def test_load_tables_reads_the_pipeline_files():
@@ -41,21 +45,34 @@ def test_missing_file_raises(tmp_path):
 def test_missing_cell_raises(tmp_path):
     tables = molveno_tables()
     daily = tables["molveno_presence_stats"]
-    tables["molveno_presence_stats"] = daily[~((daily["summer_day"] == 10) & (daily["weather"] == "rainy"))]
+    tables["molveno_presence_stats"] = daily[
+        ~((daily["summer_day"] == 10) & (daily["weather"] == "rainy"))
+    ]
     with pytest.raises(ValueError, match="cells missing"):
         load_tables(write_molveno_stats(tmp_path, tables))
 
 
 def test_summer_day_is_the_day_the_value_falls_in():
-    assert [summer_day(v, 122) for v in (0.0, 0.99, 61.5, 121.9, 122.0, -1.0)] == [0, 0, 61, 121, 121, 0]
+    assert [summer_day(v, 122) for v in (0.0, 0.99, 61.5, 121.9, 122.0, -1.0)] == [
+        0,
+        0,
+        61,
+        121,
+        121,
+        0,
+    ]
 
 
 def test_factories_look_up_the_day_or_the_month():
     tables = load_tables()
     tourists, excursionists = make_presence_factories(tables)
     daily = tables.daily[(75, "sunday", "rainy")]
-    assert tourists(**_kwargs(75.4, "sunday", "rainy")).mean() == pytest.approx(daily[0], rel=1e-3)
-    assert excursionists(**_kwargs(75.4, "sunday", "rainy")).mean() == pytest.approx(daily[2], rel=1e-3)
+    assert tourists(**_kwargs(75.4, "sunday", "rainy")).mean() == pytest.approx(
+        daily[0], rel=1e-3
+    )
+    assert excursionists(**_kwargs(75.4, "sunday", "rainy")).mean() == pytest.approx(
+        daily[2], rel=1e-3
+    )
     monthly = tables.monthly[(8, "sunday", "rainy")]
     got = excursionists(**_kwargs(75.4, "sunday", "rainy", ESTIMATOR_MONTHLY)).mean()
     assert got == pytest.approx(monthly[2], rel=1e-3)
@@ -72,7 +89,9 @@ def test_weather_weights_follow_the_months_of_the_period():
     whole, june = weather_weights(tables), weather_weights(tables, 0, 30)
     assert sum(whole.values()) == pytest.approx(1.0)
     assert june == pytest.approx(tables.weather_freq[6])
-    assert weather_weights(tables, 5, 5) == pytest.approx(tables.weather_freq[6])  # empty: one day
+    assert weather_weights(tables, 5, 5) == pytest.approx(
+        tables.weather_freq[6]
+    )  # empty: one day
 
 
 # ---------------------------------------------------------------- backend
@@ -96,7 +115,9 @@ def test_estimator_is_a_backend_choice(backend):
     monthly = MolvenoBackend(presence_estimator=ESTIMATOR_MONTHLY)
     period = {DAY_INDEX_NAME: (61.0, 86.0), "weekday": "sunday", "weather": "good"}
     ml_sample = np.mean(backend.evaluate(period).samples_y)
-    assert np.mean(monthly.evaluate(period).samples_y) != pytest.approx(ml_sample, rel=1e-3)
+    assert np.mean(monthly.evaluate(period).samples_y) != pytest.approx(
+        ml_sample, rel=1e-3
+    )
     with pytest.raises(ValueError, match="Unknown presence estimator"):
         MolvenoBackend(presence_estimator="nope")
 
@@ -107,7 +128,9 @@ def test_default_scenario_fixes_the_estimator_and_weights_the_weather(backend):
     inp = backend.model.inputs
     scenario = backend._with_period(Scenario(backend.model, overrides={}))
     assert scenario.overrides[inp.cv_presence_estimator] == ESTIMATOR_ML
-    assert scenario.overrides[inp.cv_weather] == pytest.approx(weather_weights(backend._tables))
+    assert scenario.overrides[inp.cv_weather] == pytest.approx(
+        weather_weights(backend._tables)
+    )
 
 
 def test_period_restricts_the_presence_samples(backend):

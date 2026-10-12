@@ -382,6 +382,5 @@ def test_startup_fails_without_fazzon_data(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setenv("FAZZON_DATA_DIR", str(tmp_path / "empty"))
     monkeypatch.setenv("DT_OVERTURISM_STANDALONE_MODE", "true")
-    with pytest.raises(FileNotFoundError):
-        with TestClient(create_app()):
-            pass
+    with pytest.raises(FileNotFoundError), TestClient(create_app()):
+        pass

@@ -28,7 +28,7 @@ from overtourism.backend.utils.config import (
     BASE_ROUTE,
 )
 from overtourism.backend.utils.exceptions import install_exception_handlers
-from overtourism.backend.utils.logging_config import service_log_format
+from overtourism.backend.utils.logging_config import configure_logging
 
 if typing.TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -36,12 +36,7 @@ if typing.TYPE_CHECKING:
     from overtourism.backend.handler import Handler
     from overtourism.dt_manager.session.manager import SessionManager
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format=service_log_format("backend-api", APP_VERSION),
-    handlers=[logging.StreamHandler()],
-)
+configure_logging()
 logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)

@@ -19,10 +19,20 @@ import pandas as pd
 
 _SEASONS = ["june", "july", "august", "september"]
 _WEATHERS = ["good", "cool", "rainy"]
-_SEASON_FREQ = {"june": 3 / 82, "july": 31 / 82, "august": 31 / 82, "september": 17 / 82}
+_SEASON_FREQ = {
+    "june": 3 / 82,
+    "july": 31 / 82,
+    "august": 31 / 82,
+    "september": 17 / 82,
+}
 _WEATHER_FREQ = {"good": 0.62, "cool": 0.2, "rainy": 0.18}
 _FACTOR = {"good": 1.0, "cool": 0.73, "rainy": 0.6}
-_LEVEL = {"june": 678.1, "july": 611.7, "august": 897.3, "september": 258.3}  # good-day car visitors
+_LEVEL = {
+    "june": 678.1,
+    "july": 611.7,
+    "august": 897.3,
+    "september": 258.3,
+}  # good-day car visitors
 _CV = {"june": 0.36, "july": 0.27, "august": 0.3, "september": 0.59}
 
 PRESENCE_STATS = pd.DataFrame(
@@ -59,24 +69,42 @@ MODAL_SHIFT = pd.DataFrame(
 )
 
 
-def write_fazzon_stats(folder: Path, stats=PRESENCE_STATS, modal_shift=MODAL_SHIFT) -> Path:
+def write_fazzon_stats(
+    folder: Path, stats=PRESENCE_STATS, modal_shift=MODAL_SHIFT
+) -> Path:
     """Write the Fazzon data files (pipeline layout) into *folder*."""
     folder.mkdir(parents=True, exist_ok=True)
-    stats.assign(calibration="parking_2025").to_parquet(folder / "fazzon_presence_stats.parquet")
-    modal_shift.assign(low=modal_shift["estimate"], high=modal_shift["estimate"]).to_parquet(
-        folder / "fazzon_modal_shift.parquet"
+    stats.assign(calibration="parking_2025").to_parquet(
+        folder / "fazzon_presence_stats.parquet"
     )
+    modal_shift.assign(
+        low=modal_shift["estimate"], high=modal_shift["estimate"]
+    ).to_parquet(folder / "fazzon_modal_shift.parquet")
     return folder
 
 
-FAZZON_TEST_DATA_DIR = write_fazzon_stats(Path(tempfile.mkdtemp(prefix="fazzon_test_data_")))
+FAZZON_TEST_DATA_DIR = write_fazzon_stats(
+    Path(tempfile.mkdtemp(prefix="fazzon_test_data_"))
+)
 os.environ["FAZZON_DATA_DIR"] = str(FAZZON_TEST_DATA_DIR)
 os.environ["DT_OVERTURISM_STANDALONE_MODE"] = "true"
 
 
 # ---------------------------------------------------------------- Molveno
-_MOLVENO_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-_MOLVENO_WEATHER_SHIFT = {"good": 300.0, "cool": -400.0, "rainy": -800.0}  # excursionists
+_MOLVENO_WEEKDAYS = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+]
+_MOLVENO_WEATHER_SHIFT = {
+    "good": 300.0,
+    "cool": -400.0,
+    "rainy": -800.0,
+}  # excursionists
 _MOLVENO_WEATHER_FREQ = {"good": 0.61, "cool": 0.18, "rainy": 0.21}
 
 
@@ -94,18 +122,36 @@ def molveno_tables() -> dict[str, pd.DataFrame]:
             for weather, shift in _MOLVENO_WEATHER_SHIFT.items():
                 level = _molveno_level(day)
                 weekend = 600.0 if wd in ("saturday", "sunday") else 0.0
-                rows.append({
-                    "month_day": date.strftime("%m-%d"), "summer_day": day, "month": date.month,
-                    "weekday": wd, "weather": weather,
-                    "mean_tourists": level + weekend / 2, "std_tourists": 400.0,
-                    "mean_excursionists": level + weekend + shift, "std_excursionists": 800.0,
-                    "weather_days": 30,
-                })
+                rows.append(
+                    {
+                        "month_day": date.strftime("%m-%d"),
+                        "summer_day": day,
+                        "month": date.month,
+                        "weekday": wd,
+                        "weather": weather,
+                        "mean_tourists": level + weekend / 2,
+                        "std_tourists": 400.0,
+                        "mean_excursionists": level + weekend + shift,
+                        "std_excursionists": 800.0,
+                        "weather_days": 30,
+                    }
+                )
     daily = pd.DataFrame(rows)
-    stat_cols = ["mean_tourists", "std_tourists", "mean_excursionists", "std_excursionists"]
-    monthly = daily.groupby(["month", "weekday", "weather"], as_index=False)[stat_cols].mean()
+    stat_cols = [
+        "mean_tourists",
+        "std_tourists",
+        "mean_excursionists",
+        "std_excursionists",
+    ]
+    monthly = daily.groupby(["month", "weekday", "weather"], as_index=False)[
+        stat_cols
+    ].mean()
     freq = pd.DataFrame(
-        [{"month": m, "weather": w, "freq_rel": f} for m in (6, 7, 8, 9) for w, f in _MOLVENO_WEATHER_FREQ.items()]
+        [
+            {"month": m, "weather": w, "freq_rel": f}
+            for m in (6, 7, 8, 9)
+            for w, f in _MOLVENO_WEATHER_FREQ.items()
+        ]
     )
     return {
         "molveno_presence_stats": daily,
@@ -114,7 +160,9 @@ def molveno_tables() -> dict[str, pd.DataFrame]:
     }
 
 
-def write_molveno_stats(folder: Path, tables: dict[str, pd.DataFrame] | None = None) -> Path:
+def write_molveno_stats(
+    folder: Path, tables: dict[str, pd.DataFrame] | None = None
+) -> Path:
     """Write the Molveno data files (pipeline layout) into *folder*."""
     folder.mkdir(parents=True, exist_ok=True)
     for name, df in (tables or molveno_tables()).items():
@@ -122,5 +170,7 @@ def write_molveno_stats(folder: Path, tables: dict[str, pd.DataFrame] | None = N
     return folder
 
 
-MOLVENO_TEST_DATA_DIR = write_molveno_stats(Path(tempfile.mkdtemp(prefix="molveno_test_data_")))
+MOLVENO_TEST_DATA_DIR = write_molveno_stats(
+    Path(tempfile.mkdtemp(prefix="molveno_test_data_"))
+)
 os.environ["MOLVENO_DATA_DIR"] = str(MOLVENO_TEST_DATA_DIR)

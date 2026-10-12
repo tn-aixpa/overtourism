@@ -13,8 +13,10 @@ EXECUTOR_DIR="$ROOT_DIR/executor-backend"
 API_DIR="$ROOT_DIR/overtourism-backend"
 DB_BOOTSTRAP_DIR="$ROOT_DIR/db-bootstrap"
 DB_BOOTSTRAP_PYTHON="$DB_BOOTSTRAP_DIR/.venv/bin/python"
-EXECUTOR_FASTAPI="$EXECUTOR_DIR/.venv/bin/fastapi"
-API_FASTAPI="$API_DIR/.venv/bin/fastapi"
+EXECUTOR_UVICORN="$EXECUTOR_DIR/.venv/bin/uvicorn"
+API_UVICORN="$API_DIR/.venv/bin/uvicorn"
+EXECUTOR_LOG_CONFIG="$EXECUTOR_DIR/uvicorn_log_config.json"
+API_LOG_CONFIG="$API_DIR/uvicorn_log_config.json"
 
 for project_dir in "$EXECUTOR_DIR" "$API_DIR"; do
 	if [[ ! -f "$project_dir/pyproject.toml" ]]; then
@@ -38,7 +40,7 @@ uv sync --project "$DB_BOOTSTRAP_DIR"
 
 export OVERTOURISM_DATABASE="${OVERTOURISM_DATABASE:-sqlite:///$API_DIR/overtourism/overtourism/database/overtourism.sqlite}"
 export DT_OVERTURISM_STANDALONE_MODE="${DT_OVERTOURISM_STANDALONE_MODE:-true}"
-export AUTH_ENABLED="${AUTH_ENABLED:-true}"
+export AUTH_ENABLED="${AUTH_ENABLED:-false}"
 export AUTH_ISSUER="${AUTH_ISSUER:-https://aac.platform.smartcommunitylab.it}"
 export AUTH_JWKS_URL="${AUTH_JWKS_URL:-https://aac.platform.smartcommunitylab.it/jwk}"
 export AUTH_AUDIENCE="${AUTH_AUDIENCE:-c_50e8e205e30243588df8f1ad9425831a}"
@@ -88,8 +90,12 @@ wait_for_readiness() {
 	return 1
 }
 
-"$EXECUTOR_FASTAPI" run "$ROOT_DIR/executor-backend/src/api/main.py" \
-	--host "$HOST" --port "$MAIN_PORT" &
+(
+	cd "$EXECUTOR_DIR"
+	exec "$EXECUTOR_UVICORN" src.api.main:app \
+		--host "$HOST" --port "$MAIN_PORT" \
+		--proxy-headers --log-config "$EXECUTOR_LOG_CONFIG"
+) &
 MAIN_PID=$!
 API_PID=""
 
@@ -106,8 +112,12 @@ if ! wait_for_readiness "Executor backend" "$MAIN_PORT" "$MAIN_PID" "$EXECUTOR_D
 	exit 1
 fi
 
-"$API_FASTAPI" run "$API_DIR/overtourism/overtourism/app.py" \
-	--host "$HOST" --port "$PORT" &
+(
+	cd "$API_DIR"
+	exec "$API_UVICORN" overtourism.overtourism.app:app \
+		--host "$HOST" --port "$PORT" \
+		--proxy-headers --log-config "$API_LOG_CONFIG"
+) &
 API_PID=$!
 
 if [[ $# -eq 1 ]]; then
