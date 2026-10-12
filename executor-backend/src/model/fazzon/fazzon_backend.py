@@ -22,6 +22,7 @@ from civic_digital_twins.dt_model import (
     sample_across,
 )
 
+from src.model.common.labels import MONTH_LABELS, WEATHER_LABELS
 from src.model.common.sustainability_field import (
     OvertourismEvaluationConfig,
     OvertourismParameterMeta,
@@ -300,18 +301,21 @@ class FazzonBackend:
                 ),
                 category="Contesto",
                 support=list(inp.cv_season.support),
+                support_labels=MONTH_LABELS,
             ),
             inp.cv_weather.name: OvertourismParameterMeta(
                 name=inp.cv_weather.name,
                 kind="categorical",
                 label="Meteo",
                 description=(
-                    "Vincola la valutazione a un tipo di giornata: good = bel tempo, "
-                    "cool = fresca (tmax > 2 °C sotto la media del mese), rainy = pioggia >= 5 mm. "
+                    "Vincola la valutazione a un tipo di giornata: bel tempo, fresco "
+                    "(temperatura massima di oltre 2 °C sotto la media del mese) o pioggia "
+                    "(almeno 5 mm). "
                     "Lasciare su '(tutte)' per la media ponderata sulla climatologia."
                 ),
                 category="Contesto",
                 support=list(inp.cv_weather.support),
+                support_labels=WEATHER_LABELS,
             ),
             inp.i_c_parking.name: OvertourismParameterMeta(
                 name=inp.i_c_parking.name,

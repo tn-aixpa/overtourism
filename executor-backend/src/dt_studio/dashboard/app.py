@@ -434,7 +434,14 @@ def run_dashboard(adapter: OvertourismAdapter) -> None:
                     )
                 elif spec.kind == "categorical":
                     opts = ["(tutte)"] + spec.support
-                    st.selectbox(lbl, opts, key=key, help=spec.description)
+                    labels = spec.support_labels or {}
+                    st.selectbox(
+                        lbl,
+                        opts,
+                        key=key,
+                        help=spec.description,
+                        format_func=lambda v, labels=labels: labels.get(v, v),
+                    )
                 elif spec.kind == "distribution":
                     st.slider(
                         lbl,

@@ -22,6 +22,7 @@ from civic_digital_twins.dt_model import (
     sample_across,
 )
 
+from src.model.common.labels import WEATHER_LABELS, WEEKDAY_LABELS
 from src.model.common.sustainability_field import (
     OvertourismEvaluationConfig,
     OvertourismParameterMeta,
@@ -209,6 +210,7 @@ class MolvenoBackend:
                 ),
                 category="Contesto",
                 support=list(inp.cv_weekday.support),
+                support_labels=WEEKDAY_LABELS,
             ),
             inp.i_day_of_summer.name: OvertourismParameterMeta(
                 name=inp.i_day_of_summer.name,
@@ -232,14 +234,15 @@ class MolvenoBackend:
                 kind="categorical",
                 label="Meteo",
                 description=(
-                    "Meteo del giorno: 'good', 'cool' (temperatura massima di oltre 2 °C "
-                    "sotto la media del mese) o 'rainy' (pioggia di almeno 5 mm). Senza "
-                    "selezione, le frequenze osservate nei mesi del periodo. Con tempo "
-                    "'rainy' calano gli escursionisti e la ristorazione ne assorbe una "
+                    "Meteo del giorno: bel tempo, fresco (temperatura massima di oltre 2 °C "
+                    "sotto la media del mese) o pioggia (almeno 5 mm). Senza selezione, "
+                    "le frequenze osservate nei mesi del periodo. Con la pioggia "
+                    "calano gli escursionisti e la ristorazione ne assorbe una "
                     "quota maggiore."
                 ),
                 category="Contesto",
                 support=list(inp.cv_weather.support),
+                support_labels=WEATHER_LABELS,
             ),
             inp.i_c_parking.name: OvertourismParameterMeta(
                 name=inp.i_c_parking.name,
@@ -482,7 +485,7 @@ class MolvenoBackend:
                 kind="scalar",
                 label="Percentuale di escursionisti che usano i ristoranti (pioggia)",
                 description=(
-                    "Frazione di escursionisti che usano i ristoranti con meteo 'rainy'."
+                    "Frazione di escursionisti che usano i ristoranti con la pioggia."
                 ),
                 category="Ristoranti",
                 default=0.80,
@@ -496,7 +499,7 @@ class MolvenoBackend:
                 label="Percentuale di escursionisti che usano i ristoranti (tempo bello / fresco)",
                 description=(
                     "Frazione di escursionisti che usano i ristoranti "
-                    "con meteo 'good' o 'cool'."
+                    "con bel tempo o tempo fresco."
                 ),
                 category="Ristoranti",
                 default=0.40,

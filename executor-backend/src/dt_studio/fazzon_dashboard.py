@@ -19,6 +19,7 @@ from src.dt_studio.dashboard.adapter import (
     OvertourismAdapter,
     PlotData,
     ScenarioDef,
+    format_extra_kpis,
 )
 from src.dt_studio.dashboard.app import run_dashboard
 from src.model.common.sustainability_field import (
@@ -180,11 +181,7 @@ class FazzonAdapter(OvertourismAdapter):
             sustainability_by_constraint=output.sustainability_by_constraint,
             modal_lines=output.modal_lines,
             constraint_labels=self._backend.MAPPER,
-            extra_kpis={
-                self._backend.KPI_LABELS[key]: f"{kpi['value']:.0f}"
-                + (f" ({kpi['share']:.1f}% dei potenziali)" if "share" in kpi else "")
-                for key, kpi in output.extra_kpis.items()
-            },
+            extra_kpis=format_extra_kpis(output.extra_kpis, self._backend.KPI_LABELS),
         )
 
 

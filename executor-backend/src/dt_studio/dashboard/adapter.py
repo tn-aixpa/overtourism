@@ -33,7 +33,26 @@ from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
-__all__ = ["OvertourismAdapter", "ParameterSpec", "PlotData", "ScenarioDef"]
+__all__ = ["OvertourismAdapter", "ParameterSpec", "PlotData", "ScenarioDef", "format_extra_kpis"]
+
+def format_extra_kpis(kpis: dict[str, Any], labels: dict[str, str]) -> dict[str, str]:
+    """Return the quantity KPIs of *kpis* as ``{label: "value (share%)"}``.
+
+    A KPI entry is either ``{"level", "confidence"}`` (a sustainability percentage, shown
+    by the dashboard from the sustainability index instead) or ``{"value", "share"}`` (a
+    quantity and its share in percent, ``share`` optional): only the latter are returned,
+    told apart by their fields.  *labels* maps the keys to display names (the schema's
+    ``kpi_mapper``); a key without a label is shown as it is.
+    """
+    out: dict[str, str] = {}
+    for key, kpi in kpis.items():
+        if not isinstance(kpi, dict) or "value" not in kpi:
+            continue
+        text = f"{kpi['value']:.0f}"
+        if kpi.get("share") is not None:
+            text += f" ({kpi['share']:.1f}%)"
+        out[labels.get(key, key)] = text
+    return out
 
 
 @runtime_checkable
@@ -59,6 +78,7 @@ class ParameterSpec(Protocol):
     default_category: str | None
     default_range: tuple[float, float] | None
     support: list[str]
+    support_labels: dict[str, str]
 
 
 @dataclass(frozen=True)

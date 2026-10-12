@@ -65,6 +65,10 @@ class OvertourismParameterMeta(ParameterMeta):
     min_value: float | None = None
     max_value: float | None = None
     default_range: tuple[float, float] | None = None
+    # Display label of each categorical value (``support``), e.g. ``{"monday": "lunedì"}``:
+    # widgets and index-diff labels show the label and use the value. Values without a
+    # label are shown as they are.
+    support_labels: dict[str, str] = dataclass_field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +130,7 @@ def get_index_diffs(
 
     Values are formatted according to their schema kind:
 
-    - categorical: ``"cat1 -> cat2"``;
+    - categorical: ``"cat1 -> cat2"`` (with their ``support_labels``, if any);
     - distribution: ``"x-y -> x1-y1"``;
     - scalar: ``"x -> y"``.
 
@@ -158,9 +162,10 @@ def get_index_diffs(
             old_value = spec.get("default_category", "(tutte)")
             if old_value == new_value:
                 continue
-            diffs[name] = (
-                f"{_format_index_value(old_value)} -> {_format_index_value(new_value)}"
-            )
+            labels = spec.get("support_labels") or {}
+            old_label = labels.get(old_value, _format_index_value(old_value))
+            new_label = labels.get(new_value, _format_index_value(new_value))
+            diffs[name] = f"{old_label} -> {new_label}"
             continue
 
         if kind == "distribution":

@@ -104,7 +104,8 @@ class ParameterMeta:
     default_category: str | None = None
 ```
 
-Presentation fields (`label`, `description`, `unit`, UI ranges, ...) deliberately
+Presentation fields (`label`, `description`, `unit`, UI ranges, the display
+labels of categorical values `support_labels`, ...) deliberately
 do **not** belong here — `build_scenario()` never reads them, they only affect
 widget rendering. A model-family that needs them extends via plain dataclass
 inheritance — see `OvertourismParameterMeta` in `src.model.common`
@@ -195,7 +196,13 @@ class OvertourismParameterMeta(ParameterMeta):
     min_value: float | None = None
     max_value: float | None = None
     default_range: tuple[float, float] | None = None
+    support_labels: dict[str, str] = field(default_factory=dict)
 ```
+
+`support_labels` maps categorical values to display labels (e.g.
+`{"saturday": "sabato"}`, shared labels in `src.model.common.labels`): the
+dashboards and the index-diff labels show the label, the API keeps the value;
+a value without a label is shown as it is.
 
 `build_scenario()` only touches the base `ParameterMeta` fields, so it works
 unmodified against this (or any other) subclass.
@@ -289,6 +296,20 @@ with the lowest sustainability), and one `constraint level <name>` entry per
 constraint (its `sustainability_by_constraint` value) — each as `{"level",
 "confidence"}` percentages. (Earlier versions reported the complement,
 `1 - sustainability`, under an `overtourism_level` key.)
+
+A model can add its own KPIs (`SustainabilityFieldOutput.extra_kpis`), reported
+in `kpis` next to the standard ones. A `kpis` entry has one of two formats,
+told apart by its fields (not by its key):
+
+- `{"level", "confidence"}` (plus `"name"` for `critical constraint`): a
+  percentage with its confidence half-width — the sustainability KPIs above;
+- `{"value", "share"}`: a quantity, with its share in percent (0–100;
+  `share` optional) — e.g. Fazzon's `dropouts mean` and `dropouts peak`
+  (potential visitors who do not arrive, per day, and their share of the
+  potential visitors). The dashboards show them as `value (share%)`.
+
+The display names of all KPIs are in the schema's `kpi_mapper` (model-specific
+ones from the backend's `kpi_labels`).
 
 `to_snapshot()` returns a JSON-serialisable dict (base64-encoded array
 fields) including all of the above — see §Layer 5 — REST API for why the
