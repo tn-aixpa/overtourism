@@ -19,7 +19,12 @@ from overtourism.overtourism.backend_extension.api.models.trenitno_phenomena imp
 # Source paths
 # ---------------------------------------------------------------------------
 data_dir = (
-    Path(__file__).resolve().parents[4] / "overtourism" / "database" / "index_data"
+    Path(__file__).resolve().parents[4]
+    / "overtourism"
+    / "backend_extension"
+    / "api"
+    / "database"
+    / "index_data"
 )  # TODO: replace this with dataloader
 
 MAP_SHAPEFILE = data_dir / "Com01012026_g" / "Com01012026_g_WGS84.shp"
@@ -31,7 +36,6 @@ FLOWS_SOURCE = data_dir / "phen_flussi.parquet"
 FLOWS_SOURCE_TEMP_2023 = data_dir / "phen_flussi_temp_2023.parquet"
 MACRO_AREAS_FILE = data_dir / "map_comuni_into_apt.json"
 CODICI_COMUNI_FILE = data_dir / "mapping_comuni_ISTAT.json"
-INCLUDE_TEMP_REGISTRY = False
 
 # ---------------------------------------------------------------------------
 # Types definition
@@ -65,13 +69,6 @@ _REGISTRY: dict[str, Callable[[], Indicator]] = {
     _VARIATION_RATE_KEY: lambda: VariationRateIndicator(),
     _PERIOD_PERCENTAGE_IMPACT_KEY: lambda: PeriodPercentageImpactIndicator(),
 }
-
-if INCLUDE_TEMP_REGISTRY:
-    from overtourism.overtourism.backend_extension.api.models.trentino_indicators_temp import (
-        _REGISTRY_TEMP,
-    )
-
-    _REGISTRY.update(_REGISTRY_TEMP)
 
 _INDICATOR_CACHE: dict[str, Indicator] = {}
 

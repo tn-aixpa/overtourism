@@ -36,10 +36,6 @@ PHENOMENON_LABELS_IT: dict[str, str] = {
     "presenze_vodafone": "presenze rete mobile",
     "presenze_alb": "presenze alb.",
     "presenze_xalb": "presenze extra-alb.",
-    # FlowPhenomenon-based indicators (RatioFlowsIndicator, FlowsIndicatorLevel;
-    # currently only reachable if INCLUDE_TEMP_REGISTRY is enabled)
-    "flows": "flussi",
-    "flow_value": "valore flusso",
 }
 
 # ---------------------------------------------------------------------------

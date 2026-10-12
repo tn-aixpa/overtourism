@@ -33,28 +33,6 @@ artifacts = [
 ]
 
 
-def download_index_data_old() -> None:
-    """Download the index data from the digitalhub platform."""
-
-    project = dh.get_project(project_name)
-    download_dir = Path(__file__).parent / "database" / "index_data"
-    download_dir.mkdir(parents=True, exist_ok=True)
-
-    for dataitem in dataitems:
-        print(f"Downloading dataitem: {dataitem}")
-        try:
-            project.get_dataitem(dataitem).download(str(download_dir))
-        except StoreError as e:
-            print(f"Failed to download dataitem {dataitem}: {e}")
-
-    for artifact in artifacts:
-        print(f"Downloading artifact: {artifact}")
-        try:
-            project.get_artifact(artifact).download(str(download_dir))
-        except StoreError as e:
-            print(f"Failed to download artifact {artifact}: {e}")
-
-
 def download_index_data(overwrite: bool = False) -> None:
     """Download the index data from the digitalhub platform."""
     dataitems = [
