@@ -183,7 +183,7 @@ notes.md
 behaviour.md
 TODO.md
 concept.md
-overtourism-backend/overtourism/overtourism/database/
+overtourism-backend/overtourism/overtourism/backend_extension/api/database/*
 overtourism-backend/overtourism/overtourism/database/*
 docs/howto/auth.md
 .github/instructions/
