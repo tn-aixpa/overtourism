@@ -312,11 +312,11 @@ def test_current_user_and_role_list_require_no_admin_role(
 
     roles_response = client.get("/api/auth/roles")
     assert roles_response.status_code == 200
-    assert {role["role"] for role in roles_response.json()} == {
-        "admin",
-        "multieditor",
-        "editor",
-        "viewer",
+    assert {role["role"]: role["description"] for role in roles_response.json()} == {
+        "admin": "Amministratore globale con accesso a tutti i territori.",
+        "multieditor": "Editor assegnato a tutti i territori per impostazione predefinita.",
+        "editor": "Editor con accesso a un insieme di territori, anche vuoto.",
+        "viewer": "Utente di sola lettura assegnato a un insieme di territori, anche vuoto.",
     }
 
     users_response = client.get("/api/auth/users")

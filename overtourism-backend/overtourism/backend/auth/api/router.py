@@ -30,10 +30,10 @@ from overtourism.backend.utils.executor_utils import list_models
 auth_router = APIRouter(prefix="/auth")
 
 _ROLE_DESCRIPTIONS = {
-    UserRole.ADMIN: "Global administrator with access to all territories.",
-    UserRole.MULTIEDITOR: "Editor assigned to all territories by default.",
-    UserRole.EDITOR: "Editor assigned to zero or more territories.",
-    UserRole.VIEWER: "Read-only user assigned to zero or more territories.",
+    UserRole.ADMIN: "Amministratore globale con accesso a tutti i territori.",
+    UserRole.MULTIEDITOR: "Editor assegnato a tutti i territori per impostazione predefinita.",
+    UserRole.EDITOR: "Editor con accesso a un insieme di territori, anche vuoto.",
+    UserRole.VIEWER: "Utente di sola lettura assegnato a un insieme di territori, anche vuoto.",
 }
 
 
