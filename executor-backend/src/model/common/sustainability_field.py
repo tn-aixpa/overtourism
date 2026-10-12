@@ -14,6 +14,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import field as dataclass_field
 from numbers import Real
 from typing import Any
 
@@ -64,6 +65,10 @@ class OvertourismParameterMeta(ParameterMeta):
     min_value: float | None = None
     max_value: float | None = None
     default_range: tuple[float, float] | None = None
+    # Display label of each categorical value (``support``), e.g. ``{"monday": "lunedì"}``:
+    # widgets and index-diff labels show the label and use the value. Values without a
+    # label are shown as they are.
+    support_labels: dict[str, str] = dataclass_field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +130,7 @@ def get_index_diffs(
 
     Values are formatted according to their schema kind:
 
-    - categorical: ``"cat1 -> cat2"``;
+    - categorical: ``"cat1 -> cat2"`` (with their ``support_labels``, if any);
     - distribution: ``"x-y -> x1-y1"``;
     - scalar: ``"x -> y"``.
 
@@ -157,9 +162,10 @@ def get_index_diffs(
             old_value = spec.get("default_category", "(tutte)")
             if old_value == new_value:
                 continue
-            diffs[name] = (
-                f"{_format_index_value(old_value)} -> {_format_index_value(new_value)}"
-            )
+            labels = spec.get("support_labels") or {}
+            old_label = labels.get(old_value, _format_index_value(old_value))
+            new_label = labels.get(new_value, _format_index_value(new_value))
+            diffs[name] = f"{old_label} -> {new_label}"
             continue
 
         if kind == "distribution":
@@ -423,6 +429,9 @@ class SustainabilityFieldOutput(ModelOutput):
         ``{"loc": mean, "scale": std}`` per constraint.
     confidence : float
         Confidence level for the sustainability CI (default 0.8).
+    extra_kpis : dict[str, dict[str, Any]]
+        Model-specific KPIs, added to :attr:`kpis` as they are (e.g. Fazzon's
+        potential visitors who cannot arrive).  Empty by default.
     """
 
     field: np.ndarray
@@ -434,6 +443,7 @@ class SustainabilityFieldOutput(ModelOutput):
     usage_fields: dict[str, np.ndarray]
     capacity_distributions: dict[str, dict[str, float]]
     confidence: float = 0.8
+    extra_kpis: dict[str, dict[str, Any]] = dataclass_field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Initialise the base `ModelOutput`."""
@@ -610,6 +620,7 @@ class SustainabilityFieldOutput(ModelOutput):
                 "level": round(c_mean * 100, 4),
                 "confidence": round(c_ci * 100, 4),
             }
+        kpis.update(self.extra_kpis)
         return kpis
 
     @functools.cached_property

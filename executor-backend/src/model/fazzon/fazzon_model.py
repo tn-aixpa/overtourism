@@ -9,40 +9,42 @@ plain attributes set there.
 
 Sub-models:
 
+:class:`AccessModel`
+    Vehicles of the car arrivals: persons per vehicle as a function of the parking price (A2).
+
 :class:`ParkingModel`
     Simultaneous car occupancy vs. policy cap (≈ 150 simultaneous spaces).
 
 :class:`RoadModel`
     Daily vehicle passages (cars + shuttle buses) vs. effective road capacity
-    under semaphore control.  Computes a **road cascade factor** (in [0, 1])
-    and exposes it via ``Outputs.cascade_road`` for downstream sub-models.
+    under semaphore control.
 
 :class:`FoodModel`
-    Peak simultaneous diners (after road cascade) vs. total seat capacity
-    (4 venues, 520 seats).  Takes ``cascade_road`` from :class:`RoadModel`.
-
-:class:`LakesideModel`
-    Simultaneous lakeside persons (after road cascade) vs. an environmental
-    capacity threshold.  **ASSUMPTION** — no confirmed threshold from domain
-    experts (Open Question 13 in fazzon-analysis.md).  Takes ``cascade_road``
-    from :class:`RoadModel`.
+    Peak simultaneous diners vs. total seat capacity (4 venues, 520 seats).
 
 :class:`FazzonModel`
-    Root model — owns two CVs, two PVs, all ``i_*`` defaults, and wires the
-    four sub-models.  Call :meth:`FazzonModel.default_inputs` to obtain a
+    Root model — owns the CVs, two PVs, all ``i_*`` defaults, and wires the
+    access model and the three concern sub-models.  Call :meth:`FazzonModel.default_inputs` to obtain a
     ready-to-use :class:`~FazzonModel.Inputs` instance.
+
+Every default value refers to an entry of the Fazzon assumptions register,
+``data_preparation/model/fazzon/ASSUMPTIONS.md`` (IDs ``A*`` / ``D*``).  The
+lakeside constraint was dropped (D6).
 
 Context variables
 -----------------
-cv_season   : june / july / august / september   (from 2025 parking data)
-cv_day_type : peak / base                        (prior: 2/7 – 5/7)
+cv_season   : june / july / august / september   (from 2025 parking data; A14)
+cv_weather  : good / cool / rainy  (climatology averaged over the seasons; D7, A19, A20, D13)
+cv_parking_price : 5, 10, ..., 40 euro per vehicle (always fixed by the backend; D15)
+cv_shuttle  : usable shuttle capacity class, riders per day (derived by the backend from the
+              shuttle timetable parameters; D15, D16)
 
 Presence variables
 ------------------
-pv_visitors_car   : daily car-mode visitors (calibrated; 2025 parking data)
-pv_visitors_other : daily non-car visitors  (ASSUMPTION; EETRA 2022 survey)
+pv_visitors_car   : daily arrivals by private vehicle (2025 parking data, modal shift; A2, A23, A26)
+pv_visitors_other : daily arrivals by other means (A3, A4, A6, A28)
 
-NOTE: weather CV is omitted — no weather labels exist in any Fazzon dataset.
+No day-type CV (D5).
 """
 
 # SPDX-License-Identifier: Apache-2.0
@@ -66,10 +68,12 @@ from civic_digital_twins.dt_model import (
 from scipy import stats
 
 from .fazzon_presence_stats import (
-    car_visitors_stats,
-    day_type,
-    other_visitors_stats,
-    season,
+    PRICE_INDEX_NAME,
+    PRICE_LEVELS,
+    SHUTTLE_CAPACITY_LEVELS,
+    SHUTTLE_INDEX_NAME,
+    WEATHERS,
+    presence_inputs,
 )
 
 # ---------------------------------------------------------------------------
@@ -87,6 +91,63 @@ class Constraint:
 
 
 # ---------------------------------------------------------------------------
+# AccessModel
+# ---------------------------------------------------------------------------
+
+
+@define("Access")
+class AccessModel(Model):
+    """Concern sub-model — vehicles needed by the car arrivals under the parking price (D15).
+
+    The presence variables are already the arrivals under the access policy (price
+    response and modal split are in their distributions, D8).  Here the car arrivals are
+    turned into vehicles with the persons per vehicle, which grow with the price (A2).
+
+    Formula::
+
+        price       = numeric value of cv_parking_price (euro per vehicle)
+        i_occupancy = clip(linear in price between the two occupancy points)
+        i_cars      = pv_visitors_car / i_occupancy
+    """
+
+    @inputs
+    class Inputs:
+        """Contractual inputs of :class:`AccessModel`."""
+
+        pv_visitors_car: ConditionalDistributionIndex
+        cv_parking_price: CategoricalIndex
+        i_occupancy_low_price: Index
+        i_occupancy_low: Index
+        i_occupancy_high_price: Index
+        i_occupancy_high: Index
+
+    @outputs
+    class Outputs:
+        """Contractual outputs of :class:`AccessModel`."""
+
+        i_occupancy: Index
+        i_cars: Index
+
+    def compute(self, inputs: Inputs) -> Outputs:
+        """Persons per vehicle at the price level, and the vehicles of the car arrivals."""
+        price = graph.piecewise(
+            *[(float(level), inputs.cv_parking_price == str(level)) for level in PRICE_LEVELS],
+            (float(PRICE_LEVELS[0]), True),
+        )
+        slope = (inputs.i_occupancy_high - inputs.i_occupancy_low) / (
+            inputs.i_occupancy_high_price - inputs.i_occupancy_low_price
+        )
+        linear = inputs.i_occupancy_low + (price - inputs.i_occupancy_low_price) * slope
+        # clip to [low, high]; min(a, b) = -max(-a, -b) (dt_model.graph exports no minimum)
+        occupancy = -graph.maximum(
+            -graph.maximum(linear, inputs.i_occupancy_low), -inputs.i_occupancy_high
+        )  # A2
+        i_occupancy = Index("persons per vehicle", occupancy)
+        i_cars = Index("vehicles", inputs.pv_visitors_car / i_occupancy)
+        return AccessModel.Outputs(i_occupancy=i_occupancy, i_cars=i_cars)
+
+
+# ---------------------------------------------------------------------------
 # ParkingModel
 # ---------------------------------------------------------------------------
 
@@ -95,22 +156,20 @@ class Constraint:
 class ParkingModel(Model):
     """Concern sub-model — simultaneous parking occupancy.
 
-    Converts daily car-mode visitor count to a simultaneous occupancy estimate
-    using the observed occupancy ratio (dwell_time / operating_window = 0.555),
-    then compares against the policy cap.
+    Converts the daily vehicles to a simultaneous occupancy estimate using the observed
+    occupancy ratio (dwell_time / operating_window = 0.555, A8), then compares against
+    the policy cap (A12).
 
     Formula::
 
-        pv_cars = pv_visitors_car / i_xa_persons_per_car
-        i_u_parking = pv_cars * i_occupancy_ratio
+        i_u_parking = i_cars * i_occupancy_ratio
     """
 
     @inputs
     class Inputs:
         """Contractual inputs of :class:`ParkingModel`."""
 
-        pv_visitors_car: ConditionalDistributionIndex
-        i_xa_persons_per_car: Index
+        i_cars: Index
         i_occupancy_ratio: Index
         i_c_parking: DistributionIndex
 
@@ -121,13 +180,8 @@ class ParkingModel(Model):
         i_u_parking: Index
 
     def compute(self, inputs: Inputs) -> Outputs:
-        """Compute simultaneous parking occupancy from daily car-mode visitors."""
-        i_u_parking = Index(
-            "parking usage",
-            inputs.pv_visitors_car
-            / inputs.i_xa_persons_per_car
-            * inputs.i_occupancy_ratio,
-        )
+        """Compute simultaneous parking occupancy from daily vehicles."""
+        i_u_parking = Index("parking usage", inputs.i_cars * inputs.i_occupancy_ratio)
         self.constraint = Constraint(
             name="parking", usage=i_u_parking, capacity=inputs.i_c_parking
         )
@@ -141,38 +195,23 @@ class ParkingModel(Model):
 
 @define("Road")
 class RoadModel(Model):
-    """Concern sub-model — daily vehicle passages on the Fazzon access road.
+    """Concern sub-model — vehicle passages on the Fazzon access road.
 
-    The access road (4.3 km, single-lane with semaphore under shuttle
-    operation) carries both private cars and shuttle buses.  The daily vehicle
-    passage count is compared to an effective road capacity.
-
-    A **road cascade factor** is computed here and exposed via
-    ``Outputs.cascade_road`` for downstream use in :class:`FoodModel` and
-    :class:`LakesideModel`::
-
-        cascade_road = min(1, i_c_road / i_u_road)
-
-    When the road is not saturated the factor is 1.0; when saturated it
-    represents the fraction of intended visitors that can physically reach
-    the lake.
+    The access road (4.3 km, single-lane with semaphore under shuttle operation) carries
+    private vehicles and shuttle buses.  The daily vehicle passages are compared to an
+    effective road capacity (A13).  There is no road cascade on the other constraints:
+    the presence variables are arrivals, already at the lake (D19).
 
     Formula::
 
-        road_veh_cars = (pv_visitors_car + pv_visitors_other)
-                        * i_car_mode_share / i_xa_persons_per_car
-                        * i_xo_road_trips
-        i_u_road = road_veh_cars + i_shuttle_daily_trips
+        i_u_road = i_cars * i_xo_road_trips + i_shuttle_daily_trips
     """
 
     @inputs
     class Inputs:
         """Contractual inputs of :class:`RoadModel`."""
 
-        pv_visitors_car: ConditionalDistributionIndex
-        pv_visitors_other: ConditionalDistributionIndex
-        i_car_mode_share: Index
-        i_xa_persons_per_car: Index
+        i_cars: Index
         i_xo_road_trips: Index
         i_shuttle_daily_trips: Index
         i_c_road: DistributionIndex
@@ -182,39 +221,18 @@ class RoadModel(Model):
         """Contractual outputs of :class:`RoadModel`."""
 
         i_u_road: Index
-        cascade_road: Index
 
     def compute(self, inputs: Inputs) -> Outputs:
-        """Compute road vehicle demand, cascade factor, and road constraint."""
+        """Compute road vehicle passages and the road constraint."""
         _road_vehicle_demand = (
-            (inputs.pv_visitors_car + inputs.pv_visitors_other)
-            * inputs.i_car_mode_share
-            / inputs.i_xa_persons_per_car
-            * inputs.i_xo_road_trips
-            + inputs.i_shuttle_daily_trips
+            inputs.i_cars * inputs.i_xo_road_trips + inputs.i_shuttle_daily_trips
         )
         i_u_road = Index("road usage", _road_vehicle_demand)
-
-        # Cascade: fraction of visitors reaching the lake when road is saturated.
-        # 1e-10 guard: piecewise evaluates all branches eagerly in numpy; the
-        # ratio branch is only used when demand > capacity (> 0), so the
-        # denominator epsilon only matters at demand≈0 where the condition
-        # is False anyway — it prevents a RuntimeWarning there.
-        cascade_road = Index(
-            "road cascade factor",
-            graph.piecewise(
-                (
-                    inputs.i_c_road / (_road_vehicle_demand + 1e-10),
-                    _road_vehicle_demand > inputs.i_c_road,
-                ),
-                (1.0, True),
-            ),
-        )
 
         self.constraint = Constraint(
             name="road", usage=i_u_road, capacity=inputs.i_c_road
         )
-        return RoadModel.Outputs(i_u_road=i_u_road, cascade_road=cascade_road)
+        return RoadModel.Outputs(i_u_road=i_u_road)
 
 
 # ---------------------------------------------------------------------------
@@ -226,23 +244,21 @@ class RoadModel(Model):
 class FoodModel(Model):
     """Concern sub-model — daily restaurant demand at the 4 lake venues.
 
-    Models peak simultaneous diners as a fraction of visitors reaching the
-    lake (after road cascade), divided by the daily seat turnover.  The
-    constraint is peak simultaneous demand ≤ total seats (520).
+    Models peak simultaneous diners as a fraction of the visitors reaching the lake
+    (all arrivals, D19), divided by the daily seat turnover.  The constraint is peak
+    simultaneous demand ≤ total seats (520).
 
     Formula::
 
-        pv_visitors_at_lake = (pv_visitors_car + pv_visitors_other) * cascade_road
-        i_u_food = pv_visitors_at_lake * i_u_food_fraction / i_xo_food_sittings
+        visitors_at_lake = pv_visitors_total
+        i_u_food = visitors_at_lake * i_u_food_fraction / i_xo_food_sittings
     """
 
     @inputs
     class Inputs:
         """Contractual inputs of :class:`FoodModel`."""
 
-        pv_visitors_car: ConditionalDistributionIndex
-        pv_visitors_other: ConditionalDistributionIndex
-        cascade_road: Index
+        pv_visitors_total: ConditionalDistributionIndex
         i_u_food_fraction: Index
         i_xo_food_sittings: Index
         i_c_seats: Index
@@ -254,70 +270,16 @@ class FoodModel(Model):
         i_u_food: Index
 
     def compute(self, inputs: Inputs) -> Outputs:
-        """Compute peak simultaneous diners after road cascade."""
-        pv_visitors_at_lake = (
-            inputs.pv_visitors_car + inputs.pv_visitors_other
-        ) * inputs.cascade_road
+        """Compute peak simultaneous diners."""
+        visitors_at_lake = inputs.pv_visitors_total
         i_u_food = Index(
             "food usage",
-            pv_visitors_at_lake * inputs.i_u_food_fraction / inputs.i_xo_food_sittings,
+            visitors_at_lake * inputs.i_u_food_fraction / inputs.i_xo_food_sittings,
         )
         self.constraint = Constraint(
             name="food", usage=i_u_food, capacity=inputs.i_c_seats
         )
         return FoodModel.Outputs(i_u_food=i_u_food)
-
-
-# ---------------------------------------------------------------------------
-# LakesideModel
-# ---------------------------------------------------------------------------
-
-
-@define("Lakeside")
-class LakesideModel(Model):
-    """Concern sub-model — simultaneous persons at the lakeshore.
-
-    Estimates peak simultaneous lakeside occupancy using a dwell fraction
-    analogous to the parking occupancy ratio.  The capacity threshold is an
-    **ASSUMPTION** — no confirmed threshold from domain experts (Open
-    Question 13 in fazzon-analysis.md); must be validated with ASUC and
-    environmental managers.
-
-    Formula::
-
-        pv_visitors_at_lake = (pv_visitors_car + pv_visitors_other) * cascade_road
-        i_u_lakeside = pv_visitors_at_lake * i_dwell_fraction
-    """
-
-    @inputs
-    class Inputs:
-        """Contractual inputs of :class:`LakesideModel`."""
-
-        pv_visitors_car: ConditionalDistributionIndex
-        pv_visitors_other: ConditionalDistributionIndex
-        cascade_road: Index
-        i_dwell_fraction: Index
-        i_c_lakeside: DistributionIndex
-
-    @outputs
-    class Outputs:
-        """Contractual outputs of :class:`LakesideModel`."""
-
-        i_u_lakeside: Index
-
-    def compute(self, inputs: Inputs) -> Outputs:
-        """Compute peak simultaneous lakeside occupancy after road cascade."""
-        pv_visitors_at_lake = (
-            inputs.pv_visitors_car + inputs.pv_visitors_other
-        ) * inputs.cascade_road
-        i_u_lakeside = Index(
-            "lakeside usage",
-            pv_visitors_at_lake * inputs.i_dwell_fraction,
-        )
-        self.constraint = Constraint(
-            name="lakeside", usage=i_u_lakeside, capacity=inputs.i_c_lakeside
-        )
-        return LakesideModel.Outputs(i_u_lakeside=i_u_lakeside)
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +289,7 @@ class LakesideModel(Model):
 
 @define("Fazzon")
 class FazzonModel(Model):
-    """Root overtourism model for Fazzon — wires the four concern sub-models.
+    """Root overtourism model for Fazzon — wires the access model and the three concern sub-models.
 
     Instantiate via :meth:`default_inputs`::
 
@@ -335,23 +297,28 @@ class FazzonModel(Model):
 
     Callers can override any parameter via :class:`~dt_model.Scenario`
     overrides targeting the scalar indexes exposed as instance attributes
-    (e.g. ``model.i_c_parking``, ``model.i_shuttle_daily_trips``).  These
+    (e.g. ``model.i_c_parking``, ``model.cv_parking_price``, ``model.i_shuttle_buses``).  These
     attributes are aliased from ``model.inputs.*`` inside ``compute()`` and
     refer to the same index object, so scenario overrides work identically
     whether you target ``model.i_c_parking`` or ``model.inputs.i_c_parking``.
 
     Context variables
     -----------------
-    cv_season   : june / july / august / september   (prior: proportional to observed days)
-    cv_day_type : peak / base                        (prior: 2/7 – 5/7)
+    cv_season   : june / july / august / september   (prior: proportional to observed days, A14)
+    cv_weather  : good / cool / rainy                (prior: climatology, A20, D13)
+    cv_parking_price, cv_shuttle : access policy     (always fixed by the backend, D15)
 
     Presence variables
     ------------------
-    pv_visitors_car   : daily car-mode visitors (axis x on the sustainability field)
-    pv_visitors_other : daily non-car visitors  (axis y on the sustainability field)
+    pv_visitors_car   : daily arrivals by private vehicle   (axis x of the field)
+    pv_visitors_other : daily arrivals by other means       (axis y of the field)
 
-    All ASSUMPTION-tagged values should be validated with ASUC, PAT mobility
-    data, and environmental managers of the Lago dei Caprioli reserve.
+    Both depend on the season, the weather, the parking price level and whether the
+    shuttle runs (D15): the access policy moves the arrivals on the field (modal shift),
+    and changes the field only through the persons per vehicle (:class:`AccessModel`).
+
+    The assumptions (``A*`` IDs) are listed, with their status, in
+    ``data_preparation/model/fazzon/ASSUMPTIONS.md``.
     """
 
     @inputs
@@ -360,26 +327,38 @@ class FazzonModel(Model):
 
         # Context variables
         cv_season: CategoricalIndex
-        cv_day_type: CategoricalIndex
+        cv_weather: CategoricalIndex
         # Presence distributions
         pv_visitors_car: ConditionalDistributionIndex
-        pv_visitors_other: ConditionalDistributionIndex
+        pv_visitors_total: ConditionalDistributionIndex
+        pv_visitors_other: ConditionalDistributionIndex  # sampling only (scatter)
+        # Access policy (D15)
+        cv_parking_price: CategoricalIndex
+        cv_shuttle: CategoricalIndex
+        # Shuttle timetable (A29, A35): all buses leave together every interval, from the
+        # first departure until the end of service (runs = (end - start) / interval)
+        i_shuttle_buses: Index
+        i_shuttle_seats_per_bus: Index
+        i_shuttle_interval_min: Index
+        i_shuttle_start_hour: Index
+        i_shuttle_end_hour: Index
+        i_shuttle_peak_end_hour: Index
+        i_shuttle_peak_share: Index
+        # Persons per vehicle (A2)
+        i_occupancy_low_price: Index
+        i_occupancy_low: Index
+        i_occupancy_high_price: Index
+        i_occupancy_high: Index
         # Conversion parameters
-        i_xa_persons_per_car: Index
         i_occupancy_ratio: Index
         i_xo_road_trips: Index
-        i_car_mode_share: Index
-        # Shuttle
-        i_shuttle_daily_trips: Index
-        # Dwell and food parameters
-        i_dwell_fraction: Index
+        # Food parameters
         i_u_food_fraction: Index
         i_xo_food_sittings: Index
         # Capacity parameters
         i_c_parking: DistributionIndex
         i_c_road: DistributionIndex
         i_c_seats: Index
-        i_c_lakeside: DistributionIndex
 
     @outputs
     class Outputs:
@@ -389,7 +368,7 @@ class FazzonModel(Model):
 
     @classmethod
     def default_inputs(cls) -> FazzonModel.Inputs:
-        """Return default domain inputs for the 2025 regulated season.
+        """Return default domain inputs.
 
         All defaults are calibrated from 2025 Fazzon parking ticket data and
         the 2022 EETRA modal-split survey.  Values marked ASSUMPTION have not
@@ -397,53 +376,86 @@ class FazzonModel(Model):
 
         Override individual fields with :func:`dataclasses.replace` or supply
         a :class:`~dt_model.Scenario` at evaluation time.
+
+        The presence statistics are read from the Fazzon data folder at every call
+        (see :mod:`src.model.fazzon.fazzon_data`).
         """
-        cv_season = CategoricalIndex("season", {s: season[s] for s in season})
-        cv_day_type = CategoricalIndex("day_type", {d: day_type[d] for d in day_type})
+        season, weather, behaviour, car_visitors_stats, other_visitors_stats = presence_inputs()
+        cv_season = CategoricalIndex("season", {s: season[s] for s in season})  # A14
+        cv_weather = CategoricalIndex("weather", {w: weather[w] for w in WEATHERS})  # D7, D13
+        # D15: the policy categories are always fixed by the backend (FazzonBackend); their
+        # weights only matter if a caller leaves them free, and then mix the levels.
+        cv_parking_price = CategoricalIndex(
+            PRICE_INDEX_NAME, {str(p): 1.0 / len(PRICE_LEVELS) for p in PRICE_LEVELS}
+        )
+        cv_shuttle = CategoricalIndex(
+            SHUTTLE_INDEX_NAME,
+            {str(c): 1.0 / len(SHUTTLE_CAPACITY_LEVELS) for c in SHUTTLE_CAPACITY_LEVELS},
+        )
+        policy = [cv_season, cv_weather, cv_parking_price, cv_shuttle]
 
         pv_visitors_car = ConditionalDistributionIndex(
             "visitors_car",
-            [cv_day_type, cv_season],
+            [cv_season, cv_weather, cv_parking_price],
             car_visitors_stats,
         )
+        # Trial: y axis = all visitors arriving (car + other)
+        pv_visitors_total = ConditionalDistributionIndex(
+            "visitors_total",
+            policy,
+            car_visitors_stats.total,
+        )
+        # Non-car arrivals: not in the graph, used by the backend to sample the scatter
+        # (total = car + non-car draw of the same day)
         pv_visitors_other = ConditionalDistributionIndex(
             "visitors_other",
-            [cv_day_type, cv_season],
+            policy,
             other_visitors_stats,
         )
 
         return cls.Inputs(
             cv_season=cv_season,
-            cv_day_type=cv_day_type,
+            cv_weather=cv_weather,
+            cv_parking_price=cv_parking_price,
+            cv_shuttle=cv_shuttle,
             pv_visitors_car=pv_visitors_car,
+            pv_visitors_total=pv_visitors_total,
             pv_visitors_other=pv_visitors_other,
+            # Shuttle: no bus in 2025 conditions (the Greenbus pilot only ran 28/06-20/07, D1).
+            # 2026 Lakebus (A29): 2 buses x 30 seats, together every 30 min, 9-19.
+            i_shuttle_buses=Index("shuttle buses", 0.0),
+            i_shuttle_seats_per_bus=Index("shuttle seats per bus", 30.0),
+            i_shuttle_interval_min=Index("shuttle interval (minutes)", 30.0),
+            i_shuttle_start_hour=Index("shuttle first departure (hour)", 9.0),
+            # end of service = last return to Pellizzano (last departure 18:30)
+            i_shuttle_end_hour=Index("shuttle end of service (hour)", 19.0),
+            i_shuttle_peak_end_hour=Index("shuttle morning peak end (hour)", 12.0),  # A35
+            i_shuttle_peak_share=Index("shuttle riders in the morning peak (share)", 0.6),  # A35
+            # Persons per vehicle, from the pipeline (fazzon_modal_shift, A2)
+            i_occupancy_low_price=Index("occupancy low price", behaviour["occupancy_low_price"]),
+            i_occupancy_low=Index("persons per vehicle at low price", behaviour["occupancy_low"]),
+            i_occupancy_high_price=Index(
+                "occupancy high price", behaviour["occupancy_high_price"]
+            ),
+            i_occupancy_high=Index(
+                "persons per vehicle at high price", behaviour["occupancy_high"]
+            ),
             # Conversion parameters
-            i_xa_persons_per_car=Index("persons per car", 2.83),  # NetMobility 2021
             i_occupancy_ratio=Index(
                 "parking occupancy ratio", 0.555
-            ),  # 4.44h/8h, 2021 calibration
+            ),  # A8: 4.44h/8h, 2021 calibration
             i_xo_road_trips=Index(
                 "road round-trip multiplier", 2.0
-            ),  # in + out = 2 passages
-            i_car_mode_share=Index(
-                "car mode share", 0.69
-            ),  # ASSUMPTION: 2022 EETRA; scenario-overridable
-            # Shuttle
-            i_shuttle_daily_trips=Index("shuttle daily vehicle passages", 0.0),
-            # NOTE: 0 = no shuttle (2025 baseline; shuttle data for 2025 contaminated).
-            # Override in scenarios: 32 = 2 buses × 8 A/R trips × 2 directions.
-            # Dwell and food
-            i_dwell_fraction=Index(
-                "visitor dwell fraction", 0.555
-            ),  # 4.4h/8h, ASSUMPTION proxy
+            ),  # A9: in + out = 2 passages
+            # Food
             i_u_food_fraction=Index(
                 "restaurant usage fraction", 0.55
-            ),  # ASSUMPTION: >50% (EETRA 2022)
+            ),  # A10: >50% (EETRA 2022)
             i_xo_food_sittings=Index(
                 "food seat turnover", 2.0
-            ),  # ASSUMPTION: ~2 sittings/seat/day
+            ),  # A11: ~2 sittings/seat/day
             # Capacities
-            # Parking: policy cap is 150 simultaneous cars.  Triangular captures
+            # A12 — Parking: policy cap is 150 simultaneous cars.  Triangular captures
             # uncertainty about whitelist slots (30 reserved), enforcement, and
             # peak-hour variability.  Mode=200 = physical upper bound.
             i_c_parking=DistributionIndex(
@@ -451,7 +463,7 @@ class FazzonModel(Model):
                 stats.triang,
                 {"loc": 150.0, "scale": 100.0, "c": 0.5},  # mode=200, range [150, 250]
             ),
-            # Road: effective daily vehicle capacity under semaphore control.
+            # A13 — Road: effective daily vehicle capacity under semaphore control.
             # Peak observed 2025: 422 cars × 2 trips = 844 passages; road not saturated.
             i_c_road=DistributionIndex(
                 "road capacity (vehicle passages/day)",
@@ -461,57 +473,52 @@ class FazzonModel(Model):
                     "scale": 600.0,
                 },  # ASSUMPTION uniform[800, 1400] veh passages/day
             ),
-            # Restaurant seats: 4 venues, 520 total (from data — no uncertainty).
+            # A15 — Restaurant seats: 4 venues, 520 total (from data — no uncertainty).
             i_c_seats=Index("restaurant seats", 520.0),
-            # Lakeside — ASSUMPTION: no confirmed threshold from domain experts
-            # (Open Question 13 in fazzon-analysis.md).  Range [400, 800] spans
-            # a conservative experiential limit to a plausible maximum given the
-            # shoreline area.  MUST be validated with ASUC and environmental managers.
-            i_c_lakeside=DistributionIndex(
-                "lakeside capacity (simultaneous persons)",
-                stats.uniform,
-                {"loc": 400.0, "scale": 400.0},  # ASSUMPTION uniform[400, 800] persons
-            ),
         )
 
     def compute(self, inputs: Inputs) -> Outputs:
-        """Wire the four concern sub-models from flat inputs."""
+        """Wire the three concern sub-models from flat inputs."""
+        # A29: every run goes up and comes back: 2 passages per bus and run
+        i_shuttle_daily_trips = Index(
+            "shuttle daily vehicle passages",
+            inputs.i_shuttle_buses
+            * (inputs.i_shuttle_end_hour - inputs.i_shuttle_start_hour)
+            * 60.0
+            / inputs.i_shuttle_interval_min
+            * 2.0,
+        )
+        access = AccessModel(
+            inputs=AccessModel.Inputs(
+                pv_visitors_car=inputs.pv_visitors_car,
+                cv_parking_price=inputs.cv_parking_price,
+                i_occupancy_low_price=inputs.i_occupancy_low_price,
+                i_occupancy_low=inputs.i_occupancy_low,
+                i_occupancy_high_price=inputs.i_occupancy_high_price,
+                i_occupancy_high=inputs.i_occupancy_high,
+            )
+        )
         parking = ParkingModel(
             inputs=ParkingModel.Inputs(
-                pv_visitors_car=inputs.pv_visitors_car,
-                i_xa_persons_per_car=inputs.i_xa_persons_per_car,
+                i_cars=access.outputs.i_cars,
                 i_occupancy_ratio=inputs.i_occupancy_ratio,
                 i_c_parking=inputs.i_c_parking,
             )
         )
         road = RoadModel(
             inputs=RoadModel.Inputs(
-                pv_visitors_car=inputs.pv_visitors_car,
-                pv_visitors_other=inputs.pv_visitors_other,
-                i_car_mode_share=inputs.i_car_mode_share,
-                i_xa_persons_per_car=inputs.i_xa_persons_per_car,
+                i_cars=access.outputs.i_cars,
                 i_xo_road_trips=inputs.i_xo_road_trips,
-                i_shuttle_daily_trips=inputs.i_shuttle_daily_trips,
+                i_shuttle_daily_trips=i_shuttle_daily_trips,
                 i_c_road=inputs.i_c_road,
             )
         )
         food = FoodModel(
             inputs=FoodModel.Inputs(
-                pv_visitors_car=inputs.pv_visitors_car,
-                pv_visitors_other=inputs.pv_visitors_other,
-                cascade_road=road.outputs.cascade_road,
+                pv_visitors_total=inputs.pv_visitors_total,
                 i_u_food_fraction=inputs.i_u_food_fraction,
                 i_xo_food_sittings=inputs.i_xo_food_sittings,
                 i_c_seats=inputs.i_c_seats,
-            )
-        )
-        lakeside = LakesideModel(
-            inputs=LakesideModel.Inputs(
-                pv_visitors_car=inputs.pv_visitors_car,
-                pv_visitors_other=inputs.pv_visitors_other,
-                cascade_road=road.outputs.cascade_road,
-                i_dwell_fraction=inputs.i_dwell_fraction,
-                i_c_lakeside=inputs.i_c_lakeside,
             )
         )
 
@@ -519,7 +526,6 @@ class FazzonModel(Model):
             parking.constraint,
             road.constraint,
             food.constraint,
-            lakeside.constraint,
         ]
 
         # Expose scenario-accessible indexes as direct attributes.
@@ -528,10 +534,12 @@ class FazzonModel(Model):
         self.i_c_parking = inputs.i_c_parking
         self.i_c_road = inputs.i_c_road
         self.i_c_seats = inputs.i_c_seats
-        self.i_c_lakeside = inputs.i_c_lakeside
-        self.i_car_mode_share = inputs.i_car_mode_share
-        self.i_shuttle_daily_trips = inputs.i_shuttle_daily_trips
-        # Cascade factor is computed inside RoadModel; expose for inspection.
-        self.i_cascade_road = road.outputs.cascade_road
+        self.cv_parking_price = inputs.cv_parking_price
+        self.cv_shuttle = inputs.cv_shuttle
+        self.i_shuttle_buses = inputs.i_shuttle_buses
+        self.i_shuttle_daily_trips = i_shuttle_daily_trips
+        # Computed indexes, exposed for inspection.
+        self.i_cars = access.outputs.i_cars
+        self.i_occupancy = access.outputs.i_occupancy
 
         return FazzonModel.Outputs(usage_indexes=[c.usage for c in self.constraints])

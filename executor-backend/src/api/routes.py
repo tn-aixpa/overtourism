@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException
 
 from src.api.registry import (
     BACKEND_REGISTRY,
+    DATA_DOWNLOADERS,
     MODEL_TITLES,
     get_backend,
 )
@@ -82,6 +83,7 @@ def _build_metadata(minimal: dict[str, Any]) -> dict[str, Any]:
         "sustainability_level": "Sostenibilità complessiva",
         **constraint_kpis,
         "critical constraint": "Vincolo Critico",
+        **minimal.get("kpi_labels", {}),
     }
     return {
         "mapper": mapper,
@@ -142,3 +144,29 @@ def evaluate(
     if as_snapshot:
         return EvaluateResponse.from_output(output)
     return backend.arrange_data(output)
+
+
+@router.post("/{model_key}/download-data", response_model=dict[str, str])
+def download_data(model_key: str) -> dict[str, str]:
+    """Download the model's data files from the platform again (overwriting them).
+
+    Not authenticated, like the rest of this API: the backend layers that wrap it are
+    expected to restrict access (e.g. to administrators).  On success the cached
+    backend is dropped, so the next request builds the model with the new data; on
+    failure the current files stay in place.
+    """
+    if model_key not in BACKEND_REGISTRY:
+        raise HTTPException(status_code=404, detail=f"Unknown model: {model_key!r}")
+    downloader = DATA_DOWNLOADERS.get(model_key)
+    if downloader is None:
+        raise HTTPException(
+            status_code=404, detail=f"Model {model_key!r} has no downloadable data"
+        )
+    try:
+        data_dir = downloader(overwrite=True)
+    except Exception as e:
+        raise HTTPException(
+            status_code=502, detail=f"{model_key} data download failed: {e}"
+        ) from e
+    get_backend.cache_clear()
+    return {"message": f"{model_key} data downloaded", "data_dir": str(data_dir)}

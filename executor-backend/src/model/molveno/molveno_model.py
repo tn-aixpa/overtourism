@@ -28,16 +28,19 @@ sub-model through its ``Inputs`` dataclass.
 
 :class:`FoodModel` — *Food-service usage*
     **Inputs**: ``pv_tourists``, ``pv_excursionists``, ``cv_weather``,
-    ``i_u_tourists_food``, ``i_u_excursionists_food_bad_weather``,
-    ``i_u_excursionists_food_good_unsettled_weather``,
+    ``i_u_tourists_food``, ``i_u_excursionists_food_rainy_weather``,
+    ``i_u_excursionists_food_good_cool_weather``,
     ``i_xa_visitors_food``, ``i_xo_visitors_food``, ``i_c_food``
     **Outputs**: ``i_u_food``
 
 :class:`MolvenoModel` — *Root, owns CVs, PVs, and all* ``i_*`` *defaults*
-    Creates the three context variables
-    (:class:`~civic_digital_twins.dt_model.CategoricalIndex`), the two
-    presence variables, and all ``i_*`` indexes with their default values,
-    then passes them to the four concern sub-models.  Retains the domain
+    Creates the context variables (weekday, weather and presence estimator,
+    :class:`~civic_digital_twins.dt_model.CategoricalIndex`; the day of the
+    summer, a :class:`~civic_digital_twins.dt_model.DistributionIndex` over the
+    period of the scenario), the two presence variables (read from the
+    data-preparation pipeline, see ``molveno_presence_stats``), and all ``i_*``
+    indexes with their default values, then passes them to the four concern
+    sub-models.  Retains the domain
     attributes (``cvs``, ``pvs``, ``constraints``) required by
     :class:`~dt_model.CrossProductEnsemble`.
 
@@ -88,11 +91,11 @@ from civic_digital_twins.dt_model import (
 from scipy import stats
 
 from .molveno_presence_stats import (
-    excursionist_presences_stats,
-    season,
-    tourist_presences_stats,
-    weather,
-    weekday,
+    DAY_INDEX_NAME,
+    ESTIMATOR_INDEX_NAME,
+    ESTIMATORS,
+    WEEKDAYS,
+    presence_inputs,
 )
 
 # ---------------------------------------------------------------------------
@@ -298,9 +301,9 @@ class FoodModel(Model):
     """Concern sub-model — food-service usage.
 
     The excursionist usage factor depends on the weather: it is
-    ``i_u_excursionists_food_bad_weather`` when ``cv_weather`` is ``"bad"``
-    and ``i_u_excursionists_food_good_unsettled_weather`` when it is
-    ``"good"`` or ``"unsettled"``.
+    ``i_u_excursionists_food_rainy_weather`` when ``cv_weather`` is ``"rainy"``
+    and ``i_u_excursionists_food_good_cool_weather`` when it is
+    ``"good"`` or ``"cool"``.
 
     Attributes
     ----------
@@ -316,8 +319,8 @@ class FoodModel(Model):
         pv_excursionists: ConditionalDistributionIndex
         cv_weather: CategoricalIndex
         i_u_tourists_food: Index
-        i_u_excursionists_food_bad_weather: Index
-        i_u_excursionists_food_good_unsettled_weather: Index
+        i_u_excursionists_food_rainy_weather: Index
+        i_u_excursionists_food_good_cool_weather: Index
         i_xa_visitors_food: Index
         i_xo_visitors_food: Index
         i_c_food: DistributionIndex
@@ -333,8 +336,8 @@ class FoodModel(Model):
         i_u_excursionists_food = Index(
             "excursionist food service usage factor",
             graph.piecewise(
-                (inputs.i_u_excursionists_food_bad_weather, inputs.cv_weather == "bad"),
-                (inputs.i_u_excursionists_food_good_unsettled_weather, True),
+                (inputs.i_u_excursionists_food_rainy_weather, inputs.cv_weather == "rainy"),
+                (inputs.i_u_excursionists_food_good_cool_weather, True),
             ),
         )
         i_u_food = Index(
@@ -374,8 +377,9 @@ class MolvenoModel(Model):
 
         # Context variables
         cv_weekday: CategoricalIndex
-        cv_season: CategoricalIndex
         cv_weather: CategoricalIndex
+        i_day_of_summer: DistributionIndex
+        cv_presence_estimator: CategoricalIndex
         # Presence distributions
         pv_tourists: ConditionalDistributionIndex
         pv_excursionists: ConditionalDistributionIndex
@@ -401,8 +405,8 @@ class MolvenoModel(Model):
         i_xa_tourists_accommodation: Index
         # Food parameters
         i_u_tourists_food: Index
-        i_u_excursionists_food_bad_weather: Index
-        i_u_excursionists_food_good_unsettled_weather: Index
+        i_u_excursionists_food_rainy_weather: Index
+        i_u_excursionists_food_good_cool_weather: Index
         i_xa_visitors_food: Index
         i_xo_visitors_food: Index
         # Presence-transformation parameters
@@ -435,25 +439,28 @@ class MolvenoModel(Model):
 
             m = MolvenoModel(inputs=MolvenoModel.default_inputs())
         """
-        cv_weekday = CategoricalIndex(
-            "weekday", {d: 1.0 / len(weekday) for d in weekday}
+        # Statistics read from the data-preparation pipeline (molveno_presence_stats).
+        tables, weather, tourist_presences_stats, excursionist_presences_stats = presence_inputs()
+        cv_weekday = CategoricalIndex("weekday", {d: 1.0 / len(WEEKDAYS) for d in WEEKDAYS})
+        cv_weather = CategoricalIndex("weather", weather)
+        # D9: the day of the summer, uniform over the period of the scenario (default: the
+        # whole summer); the presence estimator is fixed by the backend.
+        i_day_of_summer = DistributionIndex(
+            DAY_INDEX_NAME, stats.uniform, {"loc": 0.0, "scale": float(tables.n_days)}
         )
-        cv_season = CategoricalIndex("season", {v: season[v] for v in season})
-        cv_weather = CategoricalIndex("weather", {v: weather[v] for v in weather})
-        pv_tourists = ConditionalDistributionIndex(
-            "tourists",
-            [cv_weekday, cv_season, cv_weather],
-            tourist_presences_stats,
+        cv_presence_estimator = CategoricalIndex(
+            ESTIMATOR_INDEX_NAME, {e: 1.0 / len(ESTIMATORS) for e in ESTIMATORS}
         )
+        parents = [cv_weekday, cv_weather, i_day_of_summer, cv_presence_estimator]
+        pv_tourists = ConditionalDistributionIndex("tourists", parents, tourist_presences_stats)
         pv_excursionists = ConditionalDistributionIndex(
-            "excursionists",
-            [cv_weekday, cv_season, cv_weather],
-            excursionist_presences_stats,
+            "excursionists", parents, excursionist_presences_stats
         )
         return cls.Inputs(
             cv_weekday=cv_weekday,
-            cv_season=cv_season,
             cv_weather=cv_weather,
+            i_day_of_summer=i_day_of_summer,
+            cv_presence_estimator=cv_presence_estimator,
             pv_tourists=pv_tourists,
             pv_excursionists=pv_excursionists,
             # Distribution-backed uncertainty parameters
@@ -506,11 +513,11 @@ class MolvenoModel(Model):
             ),
             # Food parameters
             i_u_tourists_food=Index("tourist food service usage factor", 0.20),
-            i_u_excursionists_food_bad_weather=Index(
-                "excursionist food service usage factor (bad weather)", 0.80
+            i_u_excursionists_food_rainy_weather=Index(
+                "excursionist food service usage factor (rainy weather)", 0.80
             ),
-            i_u_excursionists_food_good_unsettled_weather=Index(
-                "excursionist food service usage factor (good / unsettled weather)",
+            i_u_excursionists_food_good_cool_weather=Index(
+                "excursionist food service usage factor (good / cool weather)",
                 0.40,
             ),
             i_xa_visitors_food=Index("visitors in food service allocation factor", 0.9),
@@ -568,11 +575,11 @@ class MolvenoModel(Model):
                 pv_excursionists=inputs.pv_excursionists,
                 cv_weather=inputs.cv_weather,
                 i_u_tourists_food=inputs.i_u_tourists_food,
-                i_u_excursionists_food_bad_weather=(
-                    inputs.i_u_excursionists_food_bad_weather
+                i_u_excursionists_food_rainy_weather=(
+                    inputs.i_u_excursionists_food_rainy_weather
                 ),
-                i_u_excursionists_food_good_unsettled_weather=(
-                    inputs.i_u_excursionists_food_good_unsettled_weather
+                i_u_excursionists_food_good_cool_weather=(
+                    inputs.i_u_excursionists_food_good_cool_weather
                 ),
                 i_xa_visitors_food=inputs.i_xa_visitors_food,
                 i_xo_visitors_food=inputs.i_xo_visitors_food,

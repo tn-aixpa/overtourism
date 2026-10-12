@@ -291,7 +291,6 @@ def test_get_fazzon_schema_returns_fazzon_frontend_metadata() -> None:
             "parking": "Parcheggi",
             "road": "Viabilità",
             "food": "Ristorazione",
-            "lakeside": "Lungolago",
         },
         "color_map": [
             [0.0, "rgb(5, 102, 8)"],
@@ -311,8 +310,9 @@ def test_get_fazzon_schema_returns_fazzon_frontend_metadata() -> None:
             "constraint level parking": "Sostenibilità Parcheggi",
             "constraint level road": "Sostenibilità Viabilità",
             "constraint level food": "Sostenibilità Ristorazione",
-            "constraint level lakeside": "Sostenibilità Lungolago",
             "critical constraint": "Vincolo Critico",
+            "dropouts mean": "Visitatori potenziali che non arrivano: media stagionale (persone/giorno)",
+            "dropouts peak": "Visitatori potenziali che non arrivano: giorni di picco (persone/giorno)",
         },
         "plot_mapper": {
             "monodimensional": {
@@ -324,13 +324,64 @@ def test_get_fazzon_schema_returns_fazzon_frontend_metadata() -> None:
             },
             "bidimensional": {
                 "x": {
-                    "label": "Visitatori in auto / giorno",
+                    "label": "Visitatori arrivati in auto / giorno",
                     "field": "visitors_car",
                 },
                 "y": {
-                    "label": "Visitatori non-auto / giorno",
-                    "field": "visitors_other",
+                    "label": "Visitatori arrivati in totale / giorno",
+                    "field": "visitors_total",
                 },
             },
         },
     }
+
+
+def test_download_data_refreshes_backend(monkeypatch, tmp_path) -> None:
+    from src.api import registry
+
+    calls = []
+
+    def fake_download(overwrite: bool = False):
+        calls.append(overwrite)
+        return tmp_path
+
+    monkeypatch.setitem(registry.DATA_DOWNLOADERS, "fazzon", fake_download)
+    before = registry.get_backend("fazzon")
+    response = TestClient(app).post("/models/fazzon/download-data")
+
+    assert response.status_code == 200
+    assert response.json()["data_dir"] == str(tmp_path)
+    assert calls == [True]
+    assert registry.get_backend("fazzon") is not before
+
+
+def test_download_data_failure_returns_502(monkeypatch) -> None:
+    from src.api import registry
+
+    def failing_download(overwrite: bool = False):
+        raise RuntimeError("platform unreachable")
+
+    monkeypatch.setitem(registry.DATA_DOWNLOADERS, "fazzon", failing_download)
+    response = TestClient(app).post("/models/fazzon/download-data")
+
+    assert response.status_code == 502
+    assert "platform unreachable" in response.json()["detail"]
+
+
+def test_download_data_unknown_or_without_data(monkeypatch) -> None:
+    from src.api import registry
+
+    client = TestClient(app)
+    assert client.post("/models/nope/download-data").status_code == 404
+    monkeypatch.delitem(registry.DATA_DOWNLOADERS, "molveno")
+    assert client.post("/models/molveno/download-data").status_code == 404
+
+
+def test_startup_fails_without_fazzon_data(monkeypatch, tmp_path) -> None:
+    import pytest
+
+    monkeypatch.setenv("FAZZON_DATA_DIR", str(tmp_path / "empty"))
+    monkeypatch.setenv("DT_OVERTURISM_STANDALONE_MODE", "true")
+    with pytest.raises(FileNotFoundError):
+        with TestClient(create_app()):
+            pass

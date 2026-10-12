@@ -1,0 +1,15 @@
+kind,code,name,lat,lon,description,role
+road,108,croviana,46.34606,10.90902,SS42 tra Croviana e Male',unused
+road,110,pellizzano,46.31227,10.77262,"SS42 a valle di Pellizzano, verso Mezzana (a valle dell'innesto per Fazzon)",predictor
+road,111,tonale,46.26344,10.61173,"SS42 versante trentino, ~2 km a est del passo",predictor
+road,113,dermulo,46.33014,11.06402,"Val di Non, Dermulo",unused
+road,155,pracorno,46.36229,10.90198,"Val di Rabbi, ~2 km a nord di Male'",control
+road,156,celledizzo,46.33704,10.70649,"Val di Peio, tra Cusiano e Cogolo",control
+road,170,revo,46.39307,11.04813,"Val di Non, Revo'",control
+road,175,dimaro,46.32093,10.87225,"SS239 sopra Dimaro, verso Folgarida/Campiglio",unused
+bike,LLWW78M8,laghetti_san_leonardo,46.2905,10.684086,Ciclabile Val di Sole 1,valley
+bike,GLWB8Q97,fucine_di_ossana,46.318796,10.720351,Ciclabile Val di Sole 2,near_fazzon
+bike,TFXV3R06,salet_pellizzano,46.310111,10.765111,Ciclabile Val di Sole 3,near_fazzon
+bike,RXSLG442,daolasa,46.319942,10.837108,Ciclabile Val di Sole 4,valley
+bike,FFXV2R01,molini_caldes,46.362757,10.947646,Ciclabile Val di Sole 5,valley
+poi,FAZZON,fazzon_lago_caprioli,46.293,10.7425,Parcheggio Lago dei Caprioli (posizione indicativa),target

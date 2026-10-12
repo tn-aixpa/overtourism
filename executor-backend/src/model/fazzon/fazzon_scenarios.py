@@ -60,17 +60,17 @@ def _uniform(loc: float, scale: float):
 
 
 # ---------------------------------------------------------------------------
-# Riferimento — As-Is (2025 stagione regolata)
+# Riferimento — As-Is (regole 2025)
 # ---------------------------------------------------------------------------
 
 AS_IS = WhatIfScenario(
     key="as_is",
-    label="As-is (2025 regolato)",
+    label="As-is (regole 2025)",
     category="Riferimento",
     description=(
-        "Nessun intervento.  I parametri riflettono la stagione 2025 regolata: "
-        "parcheggio contingentato, navetta non ancora operativa a regime, "
-        "quota modale auto calibrata dal dato EETRA 2022 (69 %)."
+        "Nessun intervento: le regole della stagione 2025.  Parcheggio a 5 € fino a "
+        "esaurimento posti, nessuna navetta.  È anche la condizione in cui è espressa la "
+        "domanda sugli assi del grafico."
     ),
 )
 
@@ -119,96 +119,93 @@ A2_REDUCED_CAP = WhatIfScenario(
 )
 
 # ---------------------------------------------------------------------------
-# Categoria B — Navetta
+# Categoria B — Tariffa e navetta
 #
-# La variabile i_shuttle_daily_trips rappresenta il numero di viaggi
-# navetta giornalieri (andata + ritorno).  Il riferimento AS_IS è 0
-# (nessuna navetta strutturata nella stagione 2025).
-# La variabile i_car_mode_share è la quota modale auto sul totale dei
-# visitatori giornalieri; valore di riferimento 0.69 (= 1 − 0.31, EETRA 2022).
+# cv_parking_price: prezzo medio pagato per veicolo, a passi di 5 € (A24, D15); 2025 = 5 €.
+# i_shuttle_buses: bus della navetta (2 x 30 posti ogni 30 minuti, 9-19 = Lakebus 2026, A29).
+# La risposta alla tariffa e la ripartizione fra navetta / a piedi / altrove sono
+# stimate sui dati 2025-2026 (pipeline Fazzon, fazzon_modal_shift; D8).
 # ---------------------------------------------------------------------------
 
-B1_SHUTTLE_FULL = WhatIfScenario(
-    key="b1_shuttle_full",
-    label="B1 – Navetta stagionale (lug–ago)",
-    category="B — Navetta",
+B1_SHUTTLE_ONLY = WhatIfScenario(
+    key="b1_shuttle_only",
+    label="B1 – Navetta senza tariffa",
+    category="B — Tariffa e navetta",
     description=(
-        "Attivazione della navetta per l'intera stagione alta (luglio–agosto): "
-        "2 bus × 8 corse A/R al giorno = 32 viaggi giornalieri.  La navetta "
-        "sostituisce parte dei movimenti in auto riducendo la pressione sul parcheggio.\n\n"
+        "Navetta Lakebus (2 bus da 30 posti ogni 30 minuti, 9-19) con il parcheggio a 5 € come nel 2025.  "
+        "Senza un incentivo a lasciare l'auto la navetta non sposta visitatori (come il "
+        "Greenbus pilota del 2025): aggiunge solo passaggi sulla strada.\n\n"
         "| Parametro | Riferimento (2025) | Scenario |\n"
         "| --- | --- | --- |\n"
-        "| viaggi navetta giornalieri | 0 (nessuna navetta) | **32** (2 bus × 8 A/R) |\n"
-        "| quota modale auto | 0.69 (EETRA 2022) | invariata (shift implicito via domanda) |"
+        "| tariffa parcheggio | 5 € | 5 € |\n"
+        "| bus navetta (30 posti, ogni 30 min, 9-19) | 0 | **2** |"
     ),
     overrides_fn=lambda m: {
-        m.i_shuttle_daily_trips: 32,
+        m.i_shuttle_buses: 2,
     },
 )
 
-B2_SHUTTLE_VALLEY = WhatIfScenario(
-    key="b2_shuttle_valley",
-    label="B2 – Navetta + fondovalle (integrazione valle)",
-    category="B — Navetta",
+B2_PRICE_10 = WhatIfScenario(
+    key="b2_price_10",
+    label="B2 – Tariffa 10 € + navetta",
+    category="B — Tariffa e navetta",
     description=(
-        "Navetta potenziata con integrazione fondovalle (Ossana, Mezzana, Vermiglio): "
-        "48 viaggi giornalieri totali.  La connessione con il fondovalle riduce "
-        "strutturalmente la quota modale auto al 55 %.\n\n"
+        "Tariffa intermedia di 10 € per veicolo con la navetta Lakebus.  È fuori dai due "
+        "livelli di prezzo osservati (5 € e ~15 €): l'effetto deriva dalla forma "
+        "esponenziale della risposta alla tariffa (A23).\n\n"
         "| Parametro | Riferimento (2025) | Scenario |\n"
         "| --- | --- | --- |\n"
-        "| viaggi navetta giornalieri | 0 | **48** (navetta + fondovalle) |\n"
-        "| quota modale auto | 0.69 | **0.55** (−14 pp, shift modale valle) |"
+        "| tariffa parcheggio | 5 € | **10 €** |\n"
+        "| bus navetta (30 posti, ogni 30 min, 9-19) | 0 | **2** |"
     ),
     overrides_fn=lambda m: {
-        m.i_shuttle_daily_trips: 48,
-        m.i_car_mode_share: 0.55,
+        m.cv_parking_price: "10",
+        m.i_shuttle_buses: 2,
     },
 )
 
 # ---------------------------------------------------------------------------
-# Categoria C — Pacchetti di misure (combinazioni di A e B)
+# Categoria C — Pacchetti di misure
 # ---------------------------------------------------------------------------
 
 C1_PIANO_2026 = WhatIfScenario(
     key="c1_piano_2026",
-    label="C1 – Piano di Mobilità 2026 (tariffa €20 + navetta)",
+    label="C1 – Regole 2026 (tariffa + navetta)",
     category="C — Pacchetti",
     description=(
-        "Scenario combinato del Piano di Mobilità 2026: tariffa di parcheggio "
-        "€20 (si stima riduca la domanda auto del ~15 % rispetto al 2025) più "
-        "navetta stagionale.  L'effetto tariffario è modellato come riduzione "
-        "della quota modale auto al 60 %; la navetta opera a 32 viaggi/giorno.\n\n"
+        "Le regole 2026 come osservate: parcheggio a 20 € la giornata e 10 € dopo le 12 "
+        "(prezzo medio pagato 15 €), prenotazione e semaforo, navetta Lakebus ogni 30 "
+        "minuti.  La risposta alla tariffa è stimata proprio su questo periodo: lo scenario "
+        "riproduce il 2026 e serve da riferimento per gli altri.\n\n"
         "| Parametro | Riferimento (2025) | Scenario |\n"
         "| --- | --- | --- |\n"
-        "| quota modale auto | 0.69 | **0.60** (tariffa €20, −9 pp stimati) |\n"
-        "| viaggi navetta giornalieri | 0 | **32** (2 bus × 8 A/R) |\n"
-        "| cap parcheggio simultaneo | triang, moda 200, range [150, 250] | invariato |"
+        "| tariffa parcheggio | 5 € | **15 €** (media pagata) |\n"
+        "| bus navetta (30 posti, ogni 30 min, 9-19) | 0 | **2** |"
     ),
     overrides_fn=lambda m: {
-        m.i_car_mode_share: 0.60,
-        m.i_shuttle_daily_trips: 32,
+        m.cv_parking_price: "15",
+        m.i_shuttle_buses: 2,
     },
 )
 
 C2_STRONG = WhatIfScenario(
     key="c2_strong",
-    label="C2 – Intervento forte (cap 80 + navetta + fondovalle)",
+    label="C2 – Intervento forte (cap 80 + tariffa 20 € + navetta)",
     category="C — Pacchetti",
     description=(
-        "Scenario di massima restrizione: contingentamento a 80 auto simultanee "
-        "(A2 inasprito) combinato con navetta integrata al fondovalle (B2).  "
-        "La quota modale auto scende al 50 % per effetto combinato.\n\n"
+        "Massima restrizione: contingentamento a 80 auto simultanee, tariffa di 20 € per "
+        "ogni veicolo (nessuno sconto pomeridiano) e navetta Lakebus.\n\n"
         "| Parametro | Riferimento (2025) | Scenario |\n"
         "| --- | --- | --- |\n"
         "| cap parcheggio simultaneo | triang, moda 200, range [150, 250] auto"
         " | **triang, moda 80, range [60, 100] auto** |\n"
-        "| quota modale auto | 0.69 | **0.50** (cap + shift modale valle) |\n"
-        "| viaggi navetta giornalieri | 0 | **48** (navetta + fondovalle) |"
+        "| tariffa parcheggio | 5 € | **20 €** |\n"
+        "| bus navetta (30 posti, ogni 30 min, 9-19) | 0 | **2** |"
     ),
     overrides_fn=lambda m: {
         m.i_c_parking: _triang(loc=60.0, scale=40.0, c=0.5),
-        m.i_car_mode_share: 0.50,
-        m.i_shuttle_daily_trips: 48,
+        m.cv_parking_price: "20",
+        m.i_shuttle_buses: 2,
     },
 )
 
@@ -220,8 +217,8 @@ ALL_SCENARIOS: list[WhatIfScenario] = [
     AS_IS,
     A1_NO_CAP,
     A2_REDUCED_CAP,
-    B1_SHUTTLE_FULL,
-    B2_SHUTTLE_VALLEY,
+    B1_SHUTTLE_ONLY,
+    B2_PRICE_10,
     C1_PIANO_2026,
     C2_STRONG,
 ]

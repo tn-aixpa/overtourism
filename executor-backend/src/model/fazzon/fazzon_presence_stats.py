@@ -3,298 +3,329 @@
 Two presence variables are modelled:
 
 ``pv_visitors_car``
-    Daily visitors arriving by private car.  Derived from 2025 Fazzon parking-ticket
-    data by applying **PERSONS_PER_CAR = 2.83** (NetMobility 2021 field study).
-    Season means and within-cell standard deviations are calibrated from daily
-    parking-ticket counts aggregated over the 2025 regulated season (81 days,
-    June–September).
+    Daily visitors arriving by private car.
 
 ``pv_visitors_other``
     Daily visitors arriving by non-car modes (shuttle bus, on foot, bicycle).
-    All values are **ASSUMPTION** — no 2025 non-car count data are available.
-    Derived from ``pv_visitors_car`` by applying the non-car fraction from the
-    2022 EETRA modal-split survey (**NON_CAR_SHARE = 0.31**, non-car share of
-    total visitors; ratio of non-car to car visitors ≈ 0.449).  Within-cell
-    standard deviations are set to 50 % of the cell mean (synthetic ASSUMPTION).
 
-Additive decomposition::
+Both are the **arrivals** at Fazzon, conditioned on the season, the weather class (good /
+cool / rainy, D7 in ``data_preparation/model/fazzon/ASSUMPTIONS.md``), the parking price
+level and whether the shuttle runs (D15); there is no day-type split (D5).  They are built
+from the demand in 2025 conditions (5 euro parking, no shuttle; ``fazzon_presence_stats``)
+and the behaviour model (``fazzon_modal_shift``, D8):
 
-    mean_total = season_mean + day_type_correction(season, day_type)
-    var_total  = within_cell_var(season)
+* car arrivals   = car demand × R(price),  R(p) = exp(-β (p - 5))  (A23, A27);
+* non-car arrivals = non-car demand + car demand × (1 - R(price)) × walk-up share
+  + shuttle riders  (A3, A6);
+* shuttle riders = min(car demand × (1 - R(price)) × shuttle share, usable shuttle
+  capacity)  (A28, A30, A33, A34);
+* the rest of the deterred car demand goes elsewhere and does not arrive.
 
-Unlike Portofino, there is no weather CV (no weather labels in any Fazzon dataset).
+The data has ``P(weather | season)`` (climatology, A20); the model uses one weather
+distribution for all seasons, their weighted average (D13).
 
-Day-type structure (see :data:`DAY_TYPE_BUCKETS`):
-
-* **july**:      peak = sunday only;         base = Mon–Sat (6 days)
-* **august**:    peak = monday + tuesday;    base = Wed–Sun (5 days)
-* **june**:      peak = saturday + sunday;   base = Mon–Fri (5 days)  — ASSUMPTION
-* **september**: peak = saturday + sunday;   base = Mon–Fri (5 days)  — ASSUMPTION
-
-Day-type corrections reflect the **day-of-week inversion** observed in the 2025
-Fazzon parking data: August peaks counter-intuitively on Monday–Tuesday (start of
-the working week when families rotate), while July peaks on Sunday.  June and
-September have insufficient data for calibration; the peak bucket defaults to the
-conventional weekend (ASSUMPTION).
+Data source
+-----------
+The tables are the reference datasets produced by the Fazzon data-preparation pipeline
+(``data_preparation/model/fazzon``): ``fazzon_presence_stats`` (one row per (season,
+weather) cell) and ``fazzon_modal_shift`` (behaviour parameters).  Their calibration and
+assumptions are listed in that folder's ``ASSUMPTIONS.md`` (A2: persons per vehicle;
+A3: non-car share 0.31 in 2025 conditions; A4: non-car SD 50 % of the mean; A14: season
+weights; A19–A21: weather classes, frequencies and effect; A6, A23: modal shift).  It is read from the Fazzon data folder (see
+:mod:`src.model.fazzon.fazzon_data`) every time :func:`presence_inputs` is called,
+i.e. every time a model is built: there are no built-in values, and a missing or
+malformed file is an error.
 """
 
 # SPDX-License-Identifier: Apache-2.0
 
+import logging
+from pathlib import Path
+
+import numpy as np
 import pandas as pd
 from scipy import stats
 
-# ---------------------------------------------------------------------------
-# Physical constants
-# ---------------------------------------------------------------------------
+from .fazzon_data import MODAL_SHIFT_FILE, PRESENCE_STATS_FILE, fazzon_data_dir
 
-PERSONS_PER_CAR: float = 2.83
-"""Average vehicle occupancy at Fazzon (NetMobility 2021 field study)."""
+logger = logging.getLogger(__name__)
 
-NON_CAR_SHARE: float = 0.31
-"""Non-car modal share of total visitors (2022 EETRA survey).
+SEASONS: tuple[str, ...] = ("june", "july", "august", "september")
+WEATHERS: tuple[str, ...] = ("good", "cool", "rainy")
+PRESENCE_STATS_COLUMNS: tuple[str, ...] = (
+    "season_freq_rel",
+    "weather_freq_rel",
+    "mean_car_visitors",
+    "std_car_visitors",
+    "mean_other_visitors",
+    "std_other_visitors",
+)
 
-Flagged as **ASSUMPTION** for 2025: no direct non-car count data are available
-for the regulated season.  The ratio of non-car to car visitors is
-NON_CAR_SHARE / (1 − NON_CAR_SHARE) ≈ 0.449.
-"""
-
-_OTHER_RATIO: float = NON_CAR_SHARE / (1.0 - NON_CAR_SHARE)  # ≈ 0.449  ASSUMPTION
-
-# ---------------------------------------------------------------------------
-# Day-type bucket definitions  (parametric)
-# ---------------------------------------------------------------------------
-
-DAY_TYPE_BUCKETS: dict[str, dict[str, list[str]]] = {
-    "july": {
-        "peak": ["sunday"],
-        "base": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"],
-    },
-    "august": {
-        "peak": ["monday", "tuesday"],
-        "base": ["wednesday", "thursday", "friday", "saturday", "sunday"],
-    },
-    # No 2025 day-of-week data for June and September → ASSUMPTION: conventional weekend peak
-    "june": {
-        "peak": ["saturday", "sunday"],  # ASSUMPTION
-        "base": ["monday", "tuesday", "wednesday", "thursday", "friday"],  # ASSUMPTION
-    },
-    "september": {
-        "peak": ["saturday", "sunday"],  # ASSUMPTION
-        "base": ["monday", "tuesday", "wednesday", "thursday", "friday"],  # ASSUMPTION
-    },
-}
-"""Day-of-week classification per season.
-
-Only July and August entries are calibrated from 2025 parking data.
-June and September entries are **ASSUMPTION** (conventional weekend peak);
-update this dict when day-of-week data become available for those seasons.
-"""
 
 # ---------------------------------------------------------------------------
-# Season stats
-# ---------------------------------------------------------------------------
-# Source: 2025 Fazzon parking-ticket data.
-#   Daily parking tickets → ×PERSONS_PER_CAR → pv_visitors_car
-#   pv_visitors_other = pv_visitors_car × _OTHER_RATIO  (ASSUMPTION; see module docstring)
-#   std_other_visitors = mean_other_visitors × 0.50     (ASSUMPTION; 50% relative SD)
-#
-# Raw daily parking-ticket statistics (2025 regulated season, n=81 days):
-#   june      n= 3   mean_tickets=212  sd_tickets=110   freq_rel= 3/81
-#   july      n=31   mean_tickets=176  sd_tickets= 54   freq_rel=31/81
-#   august    n=30   mean_tickets=279  sd_tickets= 95   freq_rel=30/81
-#   september n=17   mean_tickets= 80  sd_tickets= 42   freq_rel=17/81
-#
-# std values stored here = within-cell residual std (after removing the season
-# mean AND the per-season day-type correction from each observation).
-
-season_stats = pd.DataFrame(
-    [
-        {
-            "cluster_name": "june",
-            "freq_rel": 3 / 81,
-            "mean_car_visitors": 600.0,  # 212 tickets × 2.83
-            "std_car_visitors": 311.3,  # 110 × 2.83   within-cell residual std
-            "mean_other_visitors": 269.4,  # 600.0 × 0.449   ASSUMPTION
-            "std_other_visitors": 134.7,  # 269.4 × 0.50    ASSUMPTION  50% relative SD
-        },
-        {
-            "cluster_name": "july",
-            "freq_rel": 31 / 81,
-            "mean_car_visitors": 498.1,  # 176 × 2.83
-            "std_car_visitors": 152.8,  # 54 × 2.83    within-cell residual std
-            "mean_other_visitors": 223.6,  # 498.1 × 0.449   ASSUMPTION
-            "std_other_visitors": 111.8,  # 223.6 × 0.50    ASSUMPTION  50% relative SD
-        },
-        {
-            "cluster_name": "august",
-            "freq_rel": 30 / 81,
-            "mean_car_visitors": 789.6,  # 279 × 2.83
-            "std_car_visitors": 268.9,  # 95 × 2.83    within-cell residual std
-            "mean_other_visitors": 354.5,  # 789.6 × 0.449   ASSUMPTION
-            "std_other_visitors": 177.3,  # 354.5 × 0.50    ASSUMPTION  50% relative SD
-        },
-        {
-            "cluster_name": "september",
-            "freq_rel": 17 / 81,
-            "mean_car_visitors": 226.4,  # 80 × 2.83
-            "std_car_visitors": 118.9,  # 42 × 2.83    within-cell residual std
-            "mean_other_visitors": 101.6,  # 226.4 × 0.449   ASSUMPTION
-            "std_other_visitors": 50.8,  # 101.6 × 0.50    ASSUMPTION  50% relative SD
-        },
-    ]
-).set_index("cluster_name")
-
-# ---------------------------------------------------------------------------
-# Day-type stats
-# ---------------------------------------------------------------------------
-# Corrections are per-season residuals from the season mean (in person-counts).
-# Frequency-weighted mean ≈ 0 by construction for each season.
-#
-# July   (peak=sunday, freq_rel=1/7):
-#   sunday_mean_tickets=232, july_mean_tickets=176 → car-correction = +56 tickets
-#   peak (sunday) : +56 × 2.83 = +158.5 person-visits
-#   base (6 days) : −(1/6) × 56 × 2.83 ≈ −26.3 person-visits
-#   zero-mean check: (1/7)×(+56) + (6/7)×(−9.3) ≈ 0 ✓
-#   other corrections = car corrections × 0.449  (ASSUMPTION)
-#
-# August (peak=monday+tuesday, freq_rel=2/7):
-#   mon+tue_mean_tickets=319, august_mean_tickets=279 → car-correction = +40 tickets
-#   peak (2 days): +40 × 2.83 = +113.2 person-visits
-#   base (5 days): −16 × 2.83 = −45.3 person-visits
-#   zero-mean check: (2/7)×(+40) + (5/7)×(−16) = 80/7 − 80/7 = 0 ✓
-#   other corrections = car corrections × 0.449  (ASSUMPTION)
-#
-# June, September: zero corrections — ASSUMPTION (no day-of-week data)
-
-day_type_stats = pd.DataFrame(
-    [
-        {
-            "season": "june",
-            "day_type": "peak",
-            "freq_rel": 2.0 / 7.0,
-            "mean_car_visitors": 0.0,
-            "mean_other_visitors": 0.0,  # ASSUMPTION
-        },
-        {
-            "season": "june",
-            "day_type": "base",
-            "freq_rel": 5.0 / 7.0,
-            "mean_car_visitors": 0.0,
-            "mean_other_visitors": 0.0,  # ASSUMPTION
-        },
-        {
-            "season": "july",
-            "day_type": "peak",
-            "freq_rel": 1.0 / 7.0,
-            "mean_car_visitors": +158.5,
-            "mean_other_visitors": +71.2,  # +71.2 ASSUMPTION
-        },
-        {
-            "season": "july",
-            "day_type": "base",
-            "freq_rel": 6.0 / 7.0,
-            "mean_car_visitors": -26.3,
-            "mean_other_visitors": -11.8,  # -11.8 ASSUMPTION
-        },
-        {
-            "season": "august",
-            "day_type": "peak",
-            "freq_rel": 2.0 / 7.0,
-            "mean_car_visitors": +113.2,
-            "mean_other_visitors": +50.8,  # +50.8 ASSUMPTION
-        },
-        {
-            "season": "august",
-            "day_type": "base",
-            "freq_rel": 5.0 / 7.0,
-            "mean_car_visitors": -45.3,
-            "mean_other_visitors": -20.3,  # -20.3 ASSUMPTION
-        },
-        {
-            "season": "september",
-            "day_type": "peak",
-            "freq_rel": 2.0 / 7.0,
-            "mean_car_visitors": 0.0,
-            "mean_other_visitors": 0.0,  # ASSUMPTION
-        },
-        {
-            "season": "september",
-            "day_type": "base",
-            "freq_rel": 5.0 / 7.0,
-            "mean_car_visitors": 0.0,
-            "mean_other_visitors": 0.0,  # ASSUMPTION
-        },
-    ]
-).set_index(["season", "day_type"])
-
-# ---------------------------------------------------------------------------
-# CV weight dicts  — consumed by CategoricalIndex constructors in the model
+# Loading the reference dataset
 # ---------------------------------------------------------------------------
 
-season = {s: season_stats.loc[s, "freq_rel"] for s in season_stats.index}
 
-# day_type weights: peak=2/7, base=5/7.
-# The August bucket definition (peak=Mon+Tue, 2 days) gives the natural 2/7
-# peak weight.  July has peak=1/7 but 2/7 is used as a cross-season central
-# estimate consistent with the calendar share of a 2-day peak bucket.
-# ASSUMPTION — adjust if season weights are required to vary across seasons.
-day_type: dict[str, float] = {"peak": 2.0 / 7.0, "base": 5.0 / 7.0}  # ASSUMPTION
+def load_presence_stats(data_dir: str | Path | None = None) -> pd.DataFrame:
+    """Return the presence statistics read from *data_dir*, indexed by (season, weather).
+
+    *data_dir* defaults to :func:`~src.model.fazzon.fazzon_data.fazzon_data_dir`.
+    A missing file, columns or (season, weather) cells raise an error.
+    """
+    data_dir = Path(data_dir) if data_dir is not None else fazzon_data_dir()
+    path = data_dir / PRESENCE_STATS_FILE
+    if not path.exists():
+        raise FileNotFoundError(f"Fazzon presence statistics not found: {path}")
+
+    df = pd.read_parquet(path)
+    lacking = sorted({"season", "weather", *PRESENCE_STATS_COLUMNS} - set(df.columns))
+    if lacking:
+        raise ValueError(f"Fazzon presence statistics in {data_dir}: missing columns {lacking}")
+    df = df.set_index(["season", "weather"])[list(PRESENCE_STATS_COLUMNS)]
+    expected = {(s, w) for s in SEASONS for w in WEATHERS}
+    if set(df.index) != expected:
+        raise ValueError(
+            f"Fazzon presence statistics: (season, weather) cells {sorted(df.index)}, "
+            f"expected {sorted(expected)}"
+        )
+    logger.info("Fazzon presence statistics loaded from %s", data_dir)
+    order = pd.MultiIndex.from_tuples(
+        [(s, w) for s in SEASONS for w in WEATHERS], names=["season", "weather"]
+    )
+    return df.loc[order]
+
 
 # ---------------------------------------------------------------------------
 # Conditional distribution factories
 # ---------------------------------------------------------------------------
 
 
-def make_presence_factories(
-    yr_season_stats: pd.DataFrame,
-    yr_day_type_stats: pd.DataFrame,
-):
-    """Return ``(car_visitors_stats, other_visitors_stats)`` closures for the given stats.
+PRICE_INDEX_NAME = "parking price (euro per vehicle)"
+SHUTTLE_INDEX_NAME = "shuttle capacity (riders per day)"
+PRICE_LEVELS: tuple[int, ...] = (5, 10, 15, 20, 25, 30, 35, 40)  # D15: 5-euro classes
+SHUTTLE_CAPACITY_STEP = 60  # D16: capacity classes of 60 riders (one run of the 2026 Lakebus)
+SHUTTLE_CAPACITY_LEVELS: tuple[int, ...] = tuple(range(0, 3600 + 1, SHUTTLE_CAPACITY_STEP))
 
-    Both factories use the supplied season and day-type DataFrames for their
-    cell means, and the within-cell variance stored in *yr_season_stats*.
 
-    There is no weather CV for Fazzon (no weather labels in any source dataset).
-    The variance decomposition is therefore simpler than Portofino::
+def shuttle_usable_capacity(
+    buses: float,
+    seats_per_bus: float,
+    interval_min: float,
+    start_hour: float,
+    end_hour: float,
+    peak_end_hour: float,
+    peak_share: float,
+) -> float:
+    """Riders per day the shuttle can carry up (A30, A35).
 
-        var_total = within_cell_var(season)
+    All buses leave together every *interval_min* minutes from *start_hour*; each run takes
+    one interval (up and back), the last one ends at *end_hour* (end of service), so there
+    are ``(end_hour - start_hour) * 60 / interval_min`` runs (Lakebus: 9:00-18:30
+    departures, back at 19:00: 20 runs).
+    A share *peak_share* of the riders wants to go up between *start_hour* and
+    *peak_end_hour*, so the usable capacity is the smaller of the daily seats and the peak
+    seats divided by the peak share.
+    """
+    if buses <= 0 or seats_per_bus <= 0 or interval_min <= 0 or end_hour <= start_hour:
+        return 0.0
+    seats_per_run = buses * seats_per_bus
+    daily = (end_hour - start_hour) * 60.0 / interval_min * seats_per_run
+    peak_runs = max(min(peak_end_hour, end_hour) - start_hour, 0.0) * 60.0 / interval_min
+    if peak_share <= 0:
+        return daily
+    return min(daily, peak_runs * seats_per_run / peak_share)
 
-    The day-type correction shifts only the **mean**; its variance is already
-    captured inside the within-cell residual variance.
 
-    The distributions are **Gamma**, parameterised by the combined mean μ and
-    variance σ²::
+def shuttle_capacity_level(capacity: float) -> str:
+    """Capacity class (D16) of a usable capacity: nearest multiple of the step, clipped."""
+    level = int(round(capacity / SHUTTLE_CAPACITY_STEP) * SHUTTLE_CAPACITY_STEP)
+    return str(min(max(level, 0), SHUTTLE_CAPACITY_LEVELS[-1]))
+
+
+def price_response(price: float, behaviour: dict[str, float]) -> float:
+    """R(p): share of the car demand still arriving by private vehicle (A23; A27: 1 below the
+    reference price)."""
+    excess = max(price - behaviour["reference_price"], 0.0)
+    return float(np.exp(-behaviour["beta_per_euro"] * excess))
+
+
+def make_presence_factories(stats_table: pd.DataFrame, behaviour: dict[str, float]):
+    """Return ``(car_arrivals_stats, other_arrivals_stats)`` closures.
+
+    Both take the parent values as keyword arguments (``season``, ``weather``, the price
+    level and the shuttle level, keyed by the index names) and return a **Gamma**
+    distribution with mean μ and variance σ²::
 
         k = μ² / σ²   (shape)
         θ = σ² / μ    (scale)
 
-    Gamma is naturally supported on (0, ∞) with a smooth density at 0.  The
-    mean is floored at 1.0 before computing Gamma parameters to guard against
-    negative cell means (e.g. a small-n June base-day combination).
+    Car arrivals scale the car demand by R(price) (mean and SD).  Non-car arrivals add the
+    walkers and the shuttle riders to the non-car demand; the riders are capped by the
+    shuttle capacity class on the cell mean (A33), and the shifted part keeps the car
+    demand's coefficient of variation; non-car demand and shifted part are taken as
+    independent (A32), so the variances add.  The mean is floored at 1.0 before computing
+    the Gamma parameters.
     """
 
     def _gamma(mean: float, var: float):
-        mean = max(mean, 1.0)  # guard against rare low-season base-day negatives
+        mean = max(mean, 1.0)
+        var = max(var, 1e-6)
         k = mean**2 / var
         theta = var / mean
         return stats.gamma(a=k, scale=theta)
 
-    def car_visitors_stats(day_type: str, season: str):
-        mean = float(yr_season_stats.loc[season, "mean_car_visitors"])
-        var = float(yr_season_stats.loc[season, "std_car_visitors"]) ** 2
-        mean += float(yr_day_type_stats.loc[(season, day_type), "mean_car_visitors"])
+    def _cell(kwargs):
+        cell = stats_table.loc[(kwargs["season"], kwargs["weather"])]
+        price = float(kwargs[PRICE_INDEX_NAME])
+        capacity = float(kwargs.get(SHUTTLE_INDEX_NAME, 0))  # not a parent of the car arrivals
+        return cell, price_response(price, behaviour), capacity
+
+    def car_arrivals_stats(**kwargs):
+        cell, r, _ = _cell(kwargs)
+        return _gamma(cell["mean_car_visitors"] * r, (cell["std_car_visitors"] * r) ** 2)
+
+    def other_arrivals_stats(**kwargs):
+        cell, r, capacity = _cell(kwargs)
+        deterred = cell["mean_car_visitors"] * (1.0 - r)
+        shuttle_demand = deterred * behaviour["share_shuttle"]
+        riders = min(shuttle_demand, capacity)  # A33; A28: no shuttle -> capacity 0; A34: excess elsewhere
+        shuttle_part = riders / cell["mean_car_visitors"] if cell["mean_car_visitors"] > 0 else 0.0
+        shifted = (1.0 - r) * behaviour["share_walk_up"] + shuttle_part
+        mean = cell["mean_other_visitors"] + cell["mean_car_visitors"] * shifted
+        var = cell["std_other_visitors"] ** 2 + (cell["std_car_visitors"] * shifted) ** 2  # A32
         return _gamma(mean, var)
 
-    def other_visitors_stats(day_type: str, season: str):
-        mean = float(yr_season_stats.loc[season, "mean_other_visitors"])
-        var = float(yr_season_stats.loc[season, "std_other_visitors"]) ** 2
-        mean += float(yr_day_type_stats.loc[(season, day_type), "mean_other_visitors"])
-        return _gamma(mean, var)
+    def total_arrivals_stats(**kwargs):
+        """All arrivals = car + non-car arrivals, taken as independent (A32): means and
+        variances add.  (The backend's scatter samples add a car and a non-car draw of the
+        same day instead, so that total >= car on every sampled day.)"""
+        car, other = car_arrivals_stats(**kwargs), other_arrivals_stats(**kwargs)
+        return _gamma(car.mean() + other.mean(), car.var() + other.var())
 
-    return car_visitors_stats, other_visitors_stats
+    car_arrivals_stats.total = total_arrivals_stats  # see make_presence_factories
+    return car_arrivals_stats, other_arrivals_stats
 
 
-# Default module-level factories (2025 calibrated stats)
-car_visitors_stats, other_visitors_stats = make_presence_factories(
-    season_stats, day_type_stats
-)
+def presence_inputs(data_dir: str | Path | None = None):
+    """Return ``(season_weights, weather_weights, behaviour, car_arrivals_stats,
+    other_arrivals_stats)``.
+
+    * ``season_weights``: ``{season: P(season)}`` (A14);
+    * ``weather_weights``: ``{weather: sum_s P(s) P(weather | s)}`` (A20, D13): the weather
+      category does not depend on the season in the model, because the modelling library
+      cannot fix the season (or the weather) of a season-dependent category in a scenario;
+    * ``behaviour``: the behaviour parameters (:func:`behaviour_params`).
+
+    Reads the reference datasets; called by ``FazzonModel.default_inputs`` each time a model
+    is built, so a model built after a data download uses the new statistics.
+    """
+    table = load_presence_stats(data_dir)
+    behaviour = behaviour_params(data_dir)
+    season_weights = {
+        s: float(table.loc[(s, WEATHERS[0]), "season_freq_rel"]) for s in SEASONS
+    }
+    weather_weights = {
+        w: sum(season_weights[s] * float(table.loc[(s, w), "weather_freq_rel"]) for s in SEASONS)
+        for w in WEATHERS
+    }
+    total = sum(weather_weights.values())
+    weather_weights = {w: p / total for w, p in weather_weights.items()}
+    car_stats, other_stats = make_presence_factories(table, behaviour)
+    return season_weights, weather_weights, behaviour, car_stats, other_stats
+
+
+# ---------------------------------------------------------------------------
+# Behaviour parameters (modal shift, D8)
+# ---------------------------------------------------------------------------
+
+# parameter name in fazzon_modal_shift -> ``days`` sample it is taken from
+BEHAVIOUR_PARAMETERS: dict[str, str] = {
+    "reference_price": "",
+    "beta_per_euro": "",
+    "occupancy_low_price": "",
+    "occupancy_low": "",
+    "occupancy_high_price": "",
+    "occupancy_high": "",
+    "share_shuttle": "with_walk_up",  # same days as the walk-up share (from 01/08/2026)
+    "share_walk_up": "with_walk_up",
+}
+
+
+def behaviour_params(data_dir: str | Path | None = None) -> dict[str, float]:
+    """Point estimates of the behaviour model read from ``fazzon_modal_shift`` (A2, A6, A23).
+
+    A missing file or parameter raises an error.
+    """
+    data_dir = Path(data_dir) if data_dir is not None else fazzon_data_dir()
+    path = data_dir / MODAL_SHIFT_FILE
+    if not path.exists():
+        raise FileNotFoundError(f"Fazzon modal-shift parameters not found: {path}")
+    df = pd.read_parquet(path)
+    lacking = sorted({"parameter", "days", "estimate"} - set(df.columns))
+    if lacking:
+        raise ValueError(f"Fazzon modal-shift parameters in {data_dir}: missing columns {lacking}")
+    values = df.set_index(["parameter", "days"])["estimate"]
+    missing = [p for p, d in BEHAVIOUR_PARAMETERS.items() if (p, d) not in values.index]
+    if missing:
+        raise ValueError(f"Fazzon modal-shift parameters in {data_dir}: missing {missing}")
+    return {p: float(values[(p, d)]) for p, d in BEHAVIOUR_PARAMETERS.items()}
+
+
+# ---------------------------------------------------------------------------
+# Dropouts: potential visitors who do not arrive (KPI)
+# ---------------------------------------------------------------------------
+
+DROPOUT_PEAK_QUANTILE = 0.95  # "maximum": the 95th percentile of the days (A36)
+
+
+def dropouts(
+    stats_table: pd.DataFrame,
+    behaviour: dict[str, float],
+    cell_weights: dict[tuple[str, str], float],
+    price: float,
+    capacity: float,
+    n_days: int = 20_000,
+    seed: int = 0,
+) -> dict[str, float]:
+    """Potential visitors who do not arrive, per day: season mean and peak (A36).
+
+    Days are drawn from the (season, weather) cells with *cell_weights*; on each day the car
+    demand in 2025 conditions is drawn from the cell's Gamma distribution, and
+
+        deterred  = demand × (1 - R(price))
+        riders    = min(deterred × shuttle share, capacity)     (cap per day)
+        dropouts  = deterred × (1 - walk-up share) - riders
+
+    i.e. the visitors deterred by the price who neither walk up nor find a seat on the
+    shuttle (A28, A34).  The potential visitors of a day are its car demand plus the
+    cell's non-car demand in proportion (A3).  Returns ``mean`` and ``share`` (mean
+    dropouts / mean potential visitors), ``peak`` (the ``DROPOUT_PEAK_QUANTILE`` of the
+    daily dropouts) and ``peak_share`` (dropouts / potential visitors over the days at or
+    above the peak).
+    """
+    rng = np.random.default_rng(seed)
+    cells = list(cell_weights)
+    weights = np.array([cell_weights[c] for c in cells], dtype=float)
+    weights = weights / weights.sum()
+    picked = rng.choice(len(cells), size=n_days, p=weights)
+    demand = np.empty(n_days)
+    potential = np.empty(n_days)
+    for k, cell in enumerate(cells):
+        mask = picked == k
+        row = stats_table.loc[cell]
+        mean, sd = float(row["mean_car_visitors"]), float(row["std_car_visitors"])
+        shape, scale = (mean / sd) ** 2, sd**2 / mean
+        demand[mask] = rng.gamma(shape, scale, size=int(mask.sum()))
+        potential[mask] = demand[mask] * (1.0 + float(row["mean_other_visitors"]) / mean)
+    deterred = demand * (1.0 - price_response(price, behaviour))
+    riders = np.minimum(deterred * behaviour["share_shuttle"], capacity)
+    lost = deterred * (1.0 - behaviour["share_walk_up"]) - riders
+    peak = float(np.quantile(lost, DROPOUT_PEAK_QUANTILE))
+    peak_days = lost >= peak
+    return {
+        "mean": float(lost.mean()),
+        "share": float(lost.mean() / potential.mean()),
+        "peak": peak,
+        "peak_share": float(lost[peak_days].sum() / potential[peak_days].sum()),
+    }

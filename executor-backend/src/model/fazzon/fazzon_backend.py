@@ -22,6 +22,7 @@ from civic_digital_twins.dt_model import (
     sample_across,
 )
 
+from src.model.common.labels import MONTH_LABELS, WEATHER_LABELS
 from src.model.common.sustainability_field import (
     OvertourismEvaluationConfig,
     OvertourismParameterMeta,
@@ -30,6 +31,23 @@ from src.model.common.sustainability_field import (
     compute_sustainability_field,
 )
 from src.model.fazzon.fazzon_model import FazzonModel
+from src.model.fazzon.fazzon_presence_stats import (
+    PRICE_INDEX_NAME,
+    PRICE_LEVELS,
+    behaviour_params,
+    dropouts,
+    load_presence_stats,
+    shuttle_capacity_level,
+    shuttle_usable_capacity,
+)
+
+
+def price_level(price: float) -> str:
+    """The price level (5-euro class, D15) of a price in euro: nearest class, clipped to the
+    levels' range."""
+    step = PRICE_LEVELS[1] - PRICE_LEVELS[0]
+    level = int(round(float(price) / step) * step)
+    return str(min(max(level, PRICE_LEVELS[0]), PRICE_LEVELS[-1]))
 
 
 class FazzonBackend:
@@ -48,27 +66,36 @@ class FazzonBackend:
         "parking": "Parcheggi",
         "road": "Viabilità",
         "food": "Ristorazione",
-        "lakeside": "Lungolago",
     }
-    X_AXIS_NAME = "Visitatori in auto / giorno"
-    Y_AXIS_NAME = "Visitatori non-auto / giorno"
+    # The axes are the arrivals under the access policy (D15): the policy moves the samples.
+    X_AXIS_NAME = "Visitatori arrivati in auto / giorno"
+    Y_AXIS_NAME = "Visitatori arrivati in totale / giorno"
     # TODO: check: are thesepointers really needed?
+    # Model-specific KPIs (SustainabilityFieldOutput.extra_kpis) and their display names
+    KPI_LABELS: ClassVar[dict[str, str]] = {
+        "dropouts mean": "Visitatori potenziali che non arrivano: media stagionale (persone/giorno)",
+        "dropouts peak": "Visitatori potenziali che non arrivano: giorni di picco (persone/giorno)",
+    }
     X_FIELD = "visitors_car"
-    Y_FIELD = "visitors_other"
+    Y_FIELD = "visitors_total"
 
     def __init__(self) -> None:
         model = FazzonModel(inputs=FazzonModel.default_inputs())
+        # Demand statistics and behaviour parameters, for the dropout KPIs
+        self._presence_stats = load_presence_stats()
+        self._behaviour = behaviour_params()
         self._model = model
         self._index_map: dict[str, Any] = {idx.name: idx for idx in model.indexes}
         self._parameter_axes = [
             model.inputs.pv_visitors_car,
-            model.inputs.pv_visitors_other,
+            model.inputs.pv_visitors_total,
         ]
         # Grid-resolution: structural axis choices, not per-evaluation config.
-        self._c_max, self._o_max = 2000, 1000
+        # Non-car arrivals reach ~1600/day under a strong price policy (modal shift, D15).
+        self._c_max, self._o_max = 2000, 3000
         self._c_sample, self._o_sample = 100, 100
         self._config = OvertourismEvaluationConfig(
-            ensemble_size=8,  # 4 seasons x 2 day_types
+            ensemble_size=12,  # 4 seasons x 3 weather classes (D5, D7)
             ensemble_seed=0,
             n_samples_per_combo=10,
             sample_seed=1,
@@ -89,6 +116,7 @@ class FazzonBackend:
                 "y_axis_name": self.Y_AXIS_NAME,
                 "x_field": self.X_FIELD,
                 "y_field": self.Y_FIELD,
+                "kpi_labels": self.KPI_LABELS,
             },
             "indexes": self.parameter_schema(),
         }
@@ -104,15 +132,49 @@ class FazzonBackend:
         return self._model
 
     def evaluate(self, param_overrides: dict[str, Any]) -> SustainabilityFieldOutput:
-        """Evaluate the model under the given string-keyed parameter overrides."""
+        """Evaluate the model under the given string-keyed parameter overrides.
+
+        The parking price is a slider in the schema (euro) but a category in the model
+        (D15): it is converted to its price level here, outside ``build_scenario``.
+        """
+        params = dict(param_overrides)
+        price = params.pop(PRICE_INDEX_NAME, None)
         scenario = build_scenario(
             self._model,
-            param_overrides,
+            params,
             self._index_map,
             self._schema,
             self._parameter_axes,
         )
+        if price is not None:
+            overrides = {**scenario.overrides, self._model.cv_parking_price: price_level(price)}
+            scenario = Scenario(self._model, overrides=overrides, parameter_axes=self._parameter_axes)
         return self._evaluate_scenario(scenario)
+
+    def _with_policy(self, scenario: Scenario) -> Scenario:
+        """Fix the access-policy categories (D15, D16): the price level (default: the 2025
+        price, 5 euro) and the usable shuttle capacity class, computed from the shuttle
+        timetable parameters (overridden or default).  Left free, the ensemble would mix
+        the levels."""
+        model = self._model
+        inp = model.inputs
+        overrides = dict(scenario.overrides)
+        overrides.setdefault(model.cv_parking_price, str(PRICE_LEVELS[0]))
+
+        def value(idx):
+            return float(overrides.get(idx, idx.concrete_default))
+
+        capacity = shuttle_usable_capacity(
+            buses=value(inp.i_shuttle_buses),
+            seats_per_bus=value(inp.i_shuttle_seats_per_bus),
+            interval_min=value(inp.i_shuttle_interval_min),
+            start_hour=value(inp.i_shuttle_start_hour),
+            end_hour=value(inp.i_shuttle_end_hour),
+            peak_end_hour=value(inp.i_shuttle_peak_end_hour),
+            peak_share=value(inp.i_shuttle_peak_share),
+        )
+        overrides[model.cv_shuttle] = shuttle_capacity_level(capacity)
+        return Scenario(model, overrides=overrides, parameter_axes=self._parameter_axes)
 
     def arrange_data(self, output: SustainabilityFieldOutput) -> dict[str, Any]:
         """Arrange Fazzon output for the frontend presentation format."""
@@ -127,34 +189,107 @@ class FazzonBackend:
         """Hand-authored parameter metadata; the single source of truth (§3.1)."""
         inp = self._model.inputs
         return {
-            inp.i_car_mode_share.name: OvertourismParameterMeta(
-                name=inp.i_car_mode_share.name,
-                kind="scalar",
-                label="Quota modale auto",
+            inp.cv_parking_price.name: OvertourismParameterMeta(
+                name=inp.cv_parking_price.name,
+                kind="scalar",  # a category in the model, converted by evaluate() (D15)
+                label="Tariffa parcheggio (€ per veicolo)",
                 description=(
-                    "Frazione di visitatori che arriva in auto. "
-                    "Riferimento: 69 % (EETRA 2022). "
-                    "Ridurre per simulare tariffazione o shift modale."
+                    "Prezzo medio pagato per veicolo, a passi di 5 €. 5 € = regole 2025; 15 € = "
+                    "media pagata con le regole 2026 (20 € giornata, 10 € dopo le 12).  Una tariffa "
+                    "più alta riduce gli arrivi in auto (risposta stimata sui dati 2025-2026) e "
+                    "aumenta le persone per veicolo; chi rinuncia all'auto prende la navetta (se "
+                    "attiva), sale a piedi o va altrove."
                 ),
+                unit="€",
                 category="Mobilità",
-                default=0.69,
-                min_value=0.30,
-                max_value=1.00,
-                step=0.01,
+                default=float(PRICE_LEVELS[0]),
+                min_value=float(PRICE_LEVELS[0]),
+                max_value=float(PRICE_LEVELS[-1]),
+                step=float(PRICE_LEVELS[1] - PRICE_LEVELS[0]),
             ),
-            inp.i_shuttle_daily_trips.name: OvertourismParameterMeta(
-                name=inp.i_shuttle_daily_trips.name,
+            inp.i_shuttle_buses.name: OvertourismParameterMeta(
+                name=inp.i_shuttle_buses.name,
                 kind="scalar",
-                label="Viaggi navetta / giorno",
-                description=(
-                    "Passaggi totali del veicolo navetta (andata + ritorno). 0 = nessuna navetta.  32 = 2 bus × 8 A/R."
-                ),
-                unit="corse",
+                label='Navetta: numero di bus',
+                description='Bus che partono insieme a ogni corsa. 0 = nessuna navetta. Lakebus 2026: 2.',
+                unit='bus',
                 category="Navetta",
                 default=0.0,
                 min_value=0.0,
-                max_value=96.0,
-                step=4.0,
+                max_value=6.0,
+                step=1.0,
+            ),
+            inp.i_shuttle_seats_per_bus.name: OvertourismParameterMeta(
+                name=inp.i_shuttle_seats_per_bus.name,
+                kind="scalar",
+                label='Navetta: posti per bus',
+                description='Posti a sedere di ogni bus. Lakebus 2026: 30.',
+                unit='posti',
+                category="Navetta",
+                default=30.0,
+                min_value=10.0,
+                max_value=60.0,
+                step=5.0,
+            ),
+            inp.i_shuttle_interval_min.name: OvertourismParameterMeta(
+                name=inp.i_shuttle_interval_min.name,
+                kind="scalar",
+                label='Navetta: frequenza (minuti)',
+                description='Minuti fra due corse. Lakebus 2026: 30 (salita nei primi 15, discesa nei secondi 15).',
+                unit='min',
+                category="Navetta",
+                default=30.0,
+                min_value=10.0,
+                max_value=60.0,
+                step=5.0,
+            ),
+            inp.i_shuttle_start_hour.name: OvertourismParameterMeta(
+                name=inp.i_shuttle_start_hour.name,
+                kind="scalar",
+                label='Navetta: prima corsa (ora)',
+                description='Ora della prima partenza da Pellizzano. Lakebus 2026: 9.',
+                unit='h',
+                category="Navetta",
+                default=9.0,
+                min_value=6.0,
+                max_value=12.0,
+                step=1.0,
+            ),
+            inp.i_shuttle_end_hour.name: OvertourismParameterMeta(
+                name=inp.i_shuttle_end_hour.name,
+                kind="scalar",
+                label='Navetta: fine servizio (ora)',
+                description="Ora di fine servizio, cioè dell'ultimo rientro a Pellizzano. Lakebus 2026: 19 (ultima partenza 18:30).",
+                unit='h',
+                category="Navetta",
+                default=19.0,
+                min_value=14.0,
+                max_value=22.0,
+                step=1.0,
+            ),
+            inp.i_shuttle_peak_end_hour.name: OvertourismParameterMeta(
+                name=inp.i_shuttle_peak_end_hour.name,
+                kind="scalar",
+                label='Navetta: fine picco del mattino (ora)',
+                description="I passeggeri si concentrano fra la prima corsa e quest'ora. ASSUNZIONE: 12.",
+                unit='h',
+                category="Navetta",
+                default=12.0,
+                min_value=10.0,
+                max_value=15.0,
+                step=1.0,
+            ),
+            inp.i_shuttle_peak_share.name: OvertourismParameterMeta(
+                name=inp.i_shuttle_peak_share.name,
+                kind="scalar",
+                label='Navetta: quota passeggeri nel picco',
+                description='Quota dei passeggeri che vuole salire nel picco del mattino: limita la capacità utilizzabile. ASSUNZIONE: 0.6 (da validare; dati 2026: al massimo 0.69).',
+                unit='',
+                category="Navetta",
+                default=0.6,
+                min_value=0.1,
+                max_value=1.0,
+                step=0.05,
             ),
             inp.cv_season.name: OvertourismParameterMeta(
                 name=inp.cv_season.name,
@@ -166,14 +301,21 @@ class FazzonBackend:
                 ),
                 category="Contesto",
                 support=list(inp.cv_season.support),
+                support_labels=MONTH_LABELS,
             ),
-            inp.cv_day_type.name: OvertourismParameterMeta(
-                name=inp.cv_day_type.name,
+            inp.cv_weather.name: OvertourismParameterMeta(
+                name=inp.cv_weather.name,
                 kind="categorical",
-                label="Tipo di giorno",
-                description="Picco = domeniche di luglio e lun/mar di agosto.  Base = tutti gli altri giorni.",
+                label="Meteo",
+                description=(
+                    "Vincola la valutazione a un tipo di giornata: bel tempo, fresco "
+                    "(temperatura massima di oltre 2 °C sotto la media del mese) o pioggia "
+                    "(almeno 5 mm). "
+                    "Lasciare su '(tutte)' per la media ponderata sulla climatologia."
+                ),
                 category="Contesto",
-                support=list(inp.cv_day_type.support),
+                support=list(inp.cv_weather.support),
+                support_labels=WEATHER_LABELS,
             ),
             inp.i_c_parking.name: OvertourismParameterMeta(
                 name=inp.i_c_parking.name,
@@ -192,30 +334,15 @@ class FazzonBackend:
                 distribution_family="triang",
                 distribution_fixed_params={"c": 0.5},
             ),
-            inp.i_c_lakeside.name: OvertourismParameterMeta(
-                name=inp.i_c_lakeside.name,
-                kind="distribution",
-                label="Capacità lago (persone simultanee)",
-                description=(
-                    "Range [min, max] della soglia di capacità del lungolago. "
-                    "ASSUNZIONE — non validata con esperti (Domanda aperta #13)."
-                ),
-                unit="persone",
-                category="Capacità",
-                default_range=(400.0, 800.0),
-                min_value=100.0,
-                max_value=1200.0,
-                step=50.0,
-                distribution_family="uniform",
-                distribution_fixed_params={},
-            ),
         }
 
     def _evaluate_scenario(self, scenario: Scenario) -> SustainabilityFieldOutput:
         """Run the seeded field + presence-sample evaluation for `scenario`."""
+        scenario = self._with_policy(scenario)
         model = self._model
         config = self._config
-        pv_car, pv_other = model.inputs.pv_visitors_car, model.inputs.pv_visitors_other
+        pv_car, pv_other = model.inputs.pv_visitors_car, model.inputs.pv_visitors_total
+        pv_noncar = model.inputs.pv_visitors_other
         cc = np.linspace(0, self._c_max, self._c_sample + 1)
         oo = np.linspace(0, self._o_max, self._o_sample + 1)
 
@@ -238,7 +365,7 @@ class FazzonBackend:
         )
         pv_samples = sample_across(
             sampling_ensemble,
-            [pv_car, pv_other],
+            [pv_car, pv_noncar],
             total=config.target_presence_samples,
             rng=np.random.default_rng(config.sample_seed),
         )
@@ -268,8 +395,38 @@ class FazzonBackend:
             x_values=cc,
             y_values=oo,
             samples_x=list(pv_samples[pv_car]),
-            samples_y=list(pv_samples[pv_other]),
+            # total = car + non-car draws of the same day (aligned by sample_across)
+            samples_y=list(pv_samples[pv_car] + pv_samples[pv_noncar]),
             usage_fields=usage_fields,
             capacity_distributions=capacity_distributions,
             confidence=config.confidence,
+            extra_kpis=self._dropout_kpis(scenario),
         )
+
+    def _dropout_kpis(self, scenario: Scenario) -> dict[str, dict[str, float]]:
+        """Potential visitors who do not arrive (A36), for the scenario's policy and for the
+        seasons / weather classes it allows (fixed or restricted categories)."""
+        inp = self._model.inputs
+        overrides = scenario.overrides
+
+        def allowed(idx) -> dict[str, float]:
+            weights = dict(idx.outcomes)
+            pin = overrides.get(idx)
+            if pin is None:
+                return weights
+            keep = [pin] if isinstance(pin, str) else list(pin)
+            return {k: weights[k] for k in keep}
+
+        seasons, weathers = allowed(inp.cv_season), allowed(inp.cv_weather)
+        cell_weights = {(s, w): ps * pw for s, ps in seasons.items() for w, pw in weathers.items()}
+        result = dropouts(
+            self._presence_stats,
+            self._behaviour,
+            cell_weights,
+            price=float(overrides[inp.cv_parking_price]),
+            capacity=float(overrides[inp.cv_shuttle]),
+        )
+        return {
+            "dropouts mean": {"value": round(result["mean"], 1), "share": round(result["share"] * 100, 2)},
+            "dropouts peak": {"value": round(result["peak"], 1), "share": round(result["peak_share"] * 100, 2)},
+        }

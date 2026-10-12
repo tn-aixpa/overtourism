@@ -3,7 +3,10 @@
 
 Dev/test tooling only — not part of the application backend. Run with::
 
-    uv run streamlit run overtourism/dt_studio/fazzon_dashboard.py
+    uv run streamlit run src/dt_studio/fazzon_dashboard.py
+
+from the ``executor-backend`` folder, with the Fazzon data in ``FAZZON_DATA_DIR`` (e.g.
+``../data_preparation/Output/data/final_data/fazzon``; see ``docs/howto/backend.md``).
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from src.dt_studio.dashboard.adapter import (
     OvertourismAdapter,
     PlotData,
     ScenarioDef,
+    format_extra_kpis,
 )
 from src.dt_studio.dashboard.app import run_dashboard
 from src.model.common.sustainability_field import (
@@ -177,6 +181,7 @@ class FazzonAdapter(OvertourismAdapter):
             sustainability_by_constraint=output.sustainability_by_constraint,
             modal_lines=output.modal_lines,
             constraint_labels=self._backend.MAPPER,
+            extra_kpis=format_extra_kpis(output.extra_kpis, self._backend.KPI_LABELS),
         )
 
 

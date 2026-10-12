@@ -104,7 +104,8 @@ class ParameterMeta:
     default_category: str | None = None
 ```
 
-Presentation fields (`label`, `description`, `unit`, UI ranges, ...) deliberately
+Presentation fields (`label`, `description`, `unit`, UI ranges, the display
+labels of categorical values `support_labels`, ...) deliberately
 do **not** belong here — `build_scenario()` never reads them, they only affect
 widget rendering. A model-family that needs them extends via plain dataclass
 inheritance — see `OvertourismParameterMeta` in `src.model.common`
@@ -195,7 +196,13 @@ class OvertourismParameterMeta(ParameterMeta):
     min_value: float | None = None
     max_value: float | None = None
     default_range: tuple[float, float] | None = None
+    support_labels: dict[str, str] = field(default_factory=dict)
 ```
+
+`support_labels` maps categorical values to display labels (e.g.
+`{"saturday": "sabato"}`, shared labels in `src.model.common.labels`): the
+dashboards and the index-diff labels show the label, the API keeps the value;
+a value without a label is shown as it is.
 
 `build_scenario()` only touches the base `ParameterMeta` fields, so it works
 unmodified against this (or any other) subclass.
@@ -290,6 +297,20 @@ constraint (its `sustainability_by_constraint` value) — each as `{"level",
 "confidence"}` percentages. (Earlier versions reported the complement,
 `1 - sustainability`, under an `overtourism_level` key.)
 
+A model can add its own KPIs (`SustainabilityFieldOutput.extra_kpis`), reported
+in `kpis` next to the standard ones. A `kpis` entry has one of two formats,
+told apart by its fields (not by its key):
+
+- `{"level", "confidence"}` (plus `"name"` for `critical constraint`): a
+  percentage with its confidence half-width — the sustainability KPIs above;
+- `{"value", "share"}`: a quantity, with its share in percent (0–100;
+  `share` optional) — e.g. Fazzon's `dropouts mean` and `dropouts peak`
+  (potential visitors who do not arrive, per day, and their share of the
+  potential visitors). The dashboards show them as `value (share%)`.
+
+The display names of all KPIs are in the schema's `kpi_mapper` (model-specific
+ones from the backend's `kpi_labels`).
+
 `to_snapshot()` returns a JSON-serialisable dict (base64-encoded array
 fields) including all of the above — see §Layer 5 — REST API for why the
 live `/evaluate` response uses a different, plain-JSON shape instead.
@@ -313,7 +334,7 @@ Each model package contains:
 |---|---|
 | `<model>_model.py` | The model definition itself — `civic_digital_twins` sub-models, the root `Model` class, `default_inputs()`. |
 | `<model>_backend.py` | `FazzonBackend`/`MolvenoBackend` — the frontend-agnostic evaluation entry point. |
-| `<model>_presence_stats.py` | Calibration data (presence distributions by context) as plain Python. |
+| `<model>_presence_stats.py` | Presence distributions by context, built from the statistics of the model's data-preparation pipeline (`<model>_data.py`: location, download, startup check). |
 | `fazzon_scenarios.py` (Fazzon only) | Catalogue of named what-if scenarios, expressed against live `Index` objects. |
 
 Each backend also carries `MAPPER`/`X_AXIS_NAME`/`Y_AXIS_NAME`/`X_FIELD`/
@@ -380,7 +401,7 @@ choices about the axis grid, not per-evaluation quality knobs.
 **Location**: `overtourism/layer_3/api/`, run with:
 
 ```bash
-uv run fastapi run overtourism/layer_3/api/main.py --port 8001
+uv run fastapi run src/api/main.py --port 8001
 ```
 
 A REST layer over the Layer 3 backends. Depends only on
@@ -395,6 +416,13 @@ contract by convention (§Layer 3), so one generic route set parameterized by
 | `GET /models` | Registry catalogue: `[{key, title}, ...]`. |
 | `GET /models/{model_key}/schema` | `ModelSchema` — full presentation metadata built from the backend's minimal set, plus `indexes`. |
 | `POST /models/{model_key}/evaluate?as_snapshot=true` | `{param_overrides: {...}}` → evaluation result. |
+| `POST /models/{model_key}/download-data` | Downloads the model's data files from the platform again (Fazzon and Molveno; 404 for models without downloadable data) and drops the cached backend, so the next request uses the new data. `200 {message, data_dir}`; `502` if the download fails (the current files stay in place). Not authenticated: the wrapping layers must restrict it to administrators. |
+
+Models with data files (`src.api.registry.DATA_STARTUP`: Fazzon, Molveno) are checked at startup (FastAPI
+lifespan): unless `DT_OVERTURISM_STANDALONE_MODE=true` (the default) the files are downloaded from the platform
+project `PROJECT_NAME`; missing files or a failed download stop the startup. See
+`src.model.common.model_data` (shared by `fazzon_data` and `molveno_data`) and `docs/howto/backend.md`
+(Model API data).
 
 `GET /schema` no longer returns `backend.schema()` unchanged.
 `src.api.routes._build_metadata()` takes the backend's
@@ -459,12 +487,12 @@ API surface (`overtourism.backend.api.v2.*`), not merged into these routes
 
 ## Layer 5 — Streamlit dev/test tooling
 
-**Location**: `overtourism/layer_3/dt_studio/`, isolated from the computation backend
+**Location**: `src/dt_studio/`, isolated from the computation backend
 — nothing under `src.model.*` imports Streamlit, and the generic
 shell (`dashboard/adapter.py`, `dashboard/app.py`) doesn't import
 `src.model.*` either, in either direction (see below).
 
-- `overtourism/layer_3/dt_studio/dashboard/` — the generic, model-agnostic Streamlit
+- `src/dt_studio/dashboard/` — the generic, model-agnostic Streamlit
   shell: `adapter.py` defines the `OvertourismAdapter` ABC, the `PlotData`/
   `ScenarioDef` data types, and a `ParameterSpec` `Protocol` describing the
   widget-metadata attributes a spec needs (`kind`, `label`, `min_value`, ...)
@@ -472,7 +500,7 @@ shell (`dashboard/adapter.py`, `dashboard/app.py`) doesn't import
   `src.model.common` just for a type hint. `app.py`'s `run_dashboard()`
   renders the sidebar widgets, field plot, KPI panel, and scenario selector
   against that `Protocol`, for any adapter.
-- `overtourism/layer_3/dt_studio/fazzon_dashboard.py` / `molveno_dashboard.py` — the
+- `src/dt_studio/fazzon_dashboard.py` / `molveno_dashboard.py` — the
   in-process, per-model entry points. Each defines a concrete
   `OvertourismAdapter` subclass wrapping the corresponding `Backend` directly
   (no HTTP involved — the fastest way to iterate on model/backend code) and
@@ -481,11 +509,14 @@ shell (`dashboard/adapter.py`, `dashboard/app.py`) doesn't import
   the other:
 
   ```bash
-  uv run streamlit run overtourism/layer_3/dt_studio/fazzon_dashboard.py
-  uv run streamlit run overtourism/layer_3/dt_studio/molveno_dashboard.py
+  uv run streamlit run src/dt_studio/fazzon_dashboard.py
+  uv run streamlit run src/dt_studio/molveno_dashboard.py
   ```
 
-- `overtourism/layer_3/dt_studio/dashboard/http_adapter.py` +
+  (from the `executor-backend` folder; the models need their data in
+  `FAZZON_DATA_DIR` / `MOLVENO_DATA_DIR`, see `docs/howto/backend.md`).
+
+- `src/dt_studio/dashboard/http_adapter.py` +
   `fazzon_api_dashboard.py` / `molveno_api_dashboard.py` — the same
   dashboard shell driven instead by the Layer 5 REST API over HTTP
   (`HttpOvertourismAdapter`, one generic class for both models). This process
@@ -500,9 +531,9 @@ shell (`dashboard/adapter.py`, `dashboard/app.py`) doesn't import
   container split (see the Status note at the top of this document).
 
   ```bash
-  uv run fastapi run overtourism/layer_3/api/main.py --port 8001
-  uv run streamlit run overtourism/layer_3/dt_studio/fazzon_api_dashboard.py
-  uv run streamlit run overtourism/layer_3/dt_studio/molveno_api_dashboard.py
+  uv run fastapi run src/api/main.py --port 8001
+  uv run streamlit run src/dt_studio/fazzon_api_dashboard.py
+  uv run streamlit run src/dt_studio/molveno_api_dashboard.py
   ```
 
   Both dashboard styles are kept side by side: the in-process ones for fast

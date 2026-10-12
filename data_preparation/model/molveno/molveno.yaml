@@ -1,0 +1,20 @@
+# Molveno data-preparation pipeline: source files.
+# Directories and platform settings come from data_preparation/config/settings.yaml
+# (outputs go to <raw|normalized|final>/molveno/). Format: model/common/sources.py.
+
+# Read the sources from this local folder instead of the data lake (null = data lake).
+# Relative paths are resolved from this file's folder. Without access to the data lake, run
+# with --local-sources DIR (e.g. model/molveno/data, the local copies).
+local_source_dir: null
+
+sources:
+  vodafone_attendences:      # Vodafone daily presences per area, profile and country, 2023-2025
+    key: vodafone_attendences_new.csv
+    local: vodafone_attendences_new.csv
+  vodafone_attendences_str:  # Vodafone foreign presences, aggregated (STR), 2023-2025
+    key: vodafone_attendences_STR_new.csv
+    local: vodafone_attendences_STR_new.csv
+  meteo_station:             # Meteotrentino station T0414 San Lorenzo in Banale (Pergoletti), measured daily
+                             # weather; produced by data_download/download_meteo_meteotrentino.py T0414
+    key: molveno/meteo/meteo_stazione_T0414.csv
+    local: meteo/meteo_stazione_T0414.csv

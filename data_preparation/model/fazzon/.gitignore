@@ -1,0 +1,4 @@
+# Raw and generated data are not versioned (the repo tracks no data files):
+# raw sources go to the data platform (PLAN.md, Phase 1); data/meteo/ is a
+# Meteotrentino download cache; data/new/analysis_output/ is generated.
+data/

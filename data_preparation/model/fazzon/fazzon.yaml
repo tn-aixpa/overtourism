@@ -1,0 +1,44 @@
+# Fazzon data-preparation pipeline: source files.
+# Directories and platform settings come from data_preparation/config/settings.yaml
+# (outputs go to <raw|normalized|final>/fazzon/).
+
+# Read the sources from this local folder instead of the data lake (null = data lake).
+# Relative paths are resolved from this file's folder. Without access to the data lake, run
+# with --local-sources DIR (e.g. model/fazzon/data, the local copies).
+local_source_dir: null
+
+# One entry per source:
+#   key:   object key on the data lake, relative to settings.yaml platform.s3_prefix
+#   local: path relative to local_source_dir (local copies are not always named as on the lake)
+sources:
+  parking:            # 2025 + 2026 side by side, operator spreadsheet
+    key: fazzon/Dati parcheggio Fazzon.xlsx
+    local: Dati parcheggio Fazzon.xlsx
+  parking_2025:       # 2025 only; has 3 late-September days missing from `parking`
+    key: fazzon/Dati parcheggio Fazzon 2025 per IA.xlsx
+    local: Dati parcheggio Fazzon 2025 per IA.xlsx
+  greenbus_2025:      # 2025 Greenbus pilot, tickets sold
+    key: fazzon/Riepilogo dati bus estate 2025.xlsx
+    local: Riepilogo dati bus estate 2025.xlsx
+  road_counts:        # PAT Servizio Gestione Strade, hourly, 2022-2025 (~2.3 GB)
+    key: dati_transiti/dati_transito_veicolare.csv
+    local: vehicles/esportazione-002.csv
+  vodafone_attendences:
+    key: vodafone_attendences_new.csv
+    local: new/vodafone_attendences.csv
+  vodafone_attendences_str:
+    key: vodafone_attendences_STR_new.csv
+    local: new/vodafone_attendences_STR.csv
+  bike_counts:
+    key: contabici_VALDISOLE.csv
+    local: new/contabici_VALDISOLE.csv
+  tgc_accessi:
+    key: TGC/TGC_Accessi.csv
+    local: new/TGC_Accessi.csv
+  meteo_station:      # Meteotrentino station T0074 (Male'), measured daily weather;
+                      # produced by data_download/download_meteo_meteotrentino.py
+    key: fazzon/meteo/meteo_stazione_T0074.csv
+    local: meteo/meteo_stazione_T0074.csv
+  meteo_bulletin:     # Meteotrentino bulletin per comune (comparison only)
+    key: meteo_osservato.csv
+    local: new/meteo_osservato.csv

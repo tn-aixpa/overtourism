@@ -35,6 +35,7 @@ from src.dt_studio.dashboard.adapter import (
     ParameterSpec,
     PlotData,
     ScenarioDef,
+    format_extra_kpis,
 )
 
 __all__ = ["HttpOvertourismAdapter", "HttpParameterSpec"]
@@ -63,6 +64,7 @@ class HttpParameterSpec:
     default_category: str | None = None
     default_range: tuple[float, float] | None = None
     support: list[str] = field(default_factory=list)
+    support_labels: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_json(cls, d: dict[str, Any]) -> HttpParameterSpec:
@@ -89,6 +91,7 @@ class HttpParameterSpec:
             default_category=d.get("default_category"),
             default_range=tuple(default_range) if default_range else None,
             support=d.get("support", []),
+            support_labels=d.get("support_labels") or {},
         )
 
 
@@ -177,4 +180,5 @@ class HttpOvertourismAdapter(OvertourismAdapter):
                 for k, v in data["modal_lines"].items()
             },
             constraint_labels=constraint_labels,
+            extra_kpis=format_extra_kpis(data.get("kpis", {}), metadata.get("kpi_mapper", {})),
         )
