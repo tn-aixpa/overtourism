@@ -49,6 +49,14 @@ def call_schema(
     return r.json()
 
 
+def call_download_data(model: str) -> dict[str, str]:
+    """Ask the Model API to download fresh data for a model."""
+    url = f"{MODEL_BACKEND_URL}/models/{model}/download-data"
+    response = requests.post(url, auth=get_model_backend_auth())
+    response.raise_for_status()
+    return response.json()
+
+
 def call_health_ready() -> requests.Response:
     """Call the model backend readiness endpoint."""
     return requests.get(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 import requests
 from fastapi import HTTPException
+
 from overtourism.backend.api.utils.utils import (
     get_evaluation_or_404,
     get_problem_or_404,
@@ -159,6 +160,54 @@ def test_call_index_diffs_posts_batched_overrides(monkeypatch) -> None:
         "auth": None,
     }
     assert actual_diffs == expected_diffs
+
+
+def test_call_download_data_posts_to_model_backend(monkeypatch) -> None:
+    expected_response = {
+        "message": "molveno data downloaded",
+        "data_dir": "/data/molveno",
+    }
+    captured_request = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            pass
+
+        def json(self) -> dict[str, str]:
+            return expected_response
+
+    def fake_post(url: str, *, auth=None):
+        captured_request["url"] = url
+        captured_request["auth"] = auth
+        return FakeResponse()
+
+    monkeypatch.setattr(executor_utils, "MODEL_BACKEND_URL", "http://model.test")
+    monkeypatch.setattr(executor_utils, "MODEL_BACKEND_USER", "model-user")
+    monkeypatch.setattr(executor_utils, "MODEL_BACKEND_PASSWORD", "model-password")
+    monkeypatch.setattr(executor_utils.requests, "post", fake_post)
+
+    response = executor_utils.call_download_data("molveno")
+
+    assert captured_request == {
+        "url": "http://model.test/models/molveno/download-data",
+        "auth": ("model-user", "model-password"),
+    }
+    assert response == expected_response
+
+
+def test_call_download_data_raises_for_upstream_http_errors(monkeypatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            raise requests.HTTPError("download rejected")
+
+    monkeypatch.setattr(
+        executor_utils.requests,
+        "post",
+        lambda *args, **kwargs: FakeResponse(),
+    )
+
+    with pytest.raises(requests.HTTPError, match="download rejected"):
+        executor_utils.call_download_data("molveno")
 
 
 @pytest.mark.parametrize(

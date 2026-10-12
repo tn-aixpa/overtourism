@@ -6,7 +6,11 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
+import requests
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+
+from overtourism.backend.api.routes import executor as executor_api
 from overtourism.backend.auth.identity.authorization import require_global_admin
 from overtourism.backend.auth.identity.sql_repository import SQLUserRepository
 from overtourism.backend.auth.identity.user_manager import UserManager
@@ -482,6 +486,114 @@ def test_force_index_download_requires_global_admin(
     assert download_calls == ([True] if subject == "global-admin" else [])
     if subject == "global-admin":
         assert response.json() == {"message": "Index data download completed"}
+
+
+@pytest.mark.parametrize(
+    ("subject", "expected_status"),
+    [("user-1", 403), ("global-admin", 200)],
+)
+def test_executor_data_download_requires_global_admin(
+    handler: Handler,
+    monkeypatch: pytest.MonkeyPatch,
+    subject: str,
+    expected_status: int,
+) -> None:
+    store = cast(SQLStore, handler.manager.store)
+    repository = SQLUserRepository(store.engine, store.session_factory)
+    user_manager = UserManager(repository)
+    admin = user_manager.create_user(
+        identifier="global-admin@example.org",
+        role=UserRole.ADMIN,
+        territories=[],
+    )
+    repository.save_user(replace(admin, subject="global-admin"))
+    user_manager.reload()
+    handler.user_manager = user_manager
+
+    app = create_app(handler)
+    app.dependency_overrides[get_auth_settings] = lambda: AuthSettings(
+        enabled=True,
+        jwks_url="https://example.com/.well-known/jwks.json",
+    )
+    monkeypatch.setattr(
+        "overtourism.backend.auth.tokens.dependencies.decode_jwt",
+        lambda token, settings: {"sub": subject},
+    )
+    download_calls: list[str] = []
+
+    def download_model_data(model: str) -> dict[str, str]:
+        download_calls.append(model)
+        return {"message": f"{model} data downloaded", "data_dir": "/data/model"}
+
+    monkeypatch.setattr(
+        executor_api,
+        "call_download_data",
+        download_model_data,
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/territory-alpha/configuration/download-data",
+            headers={"Authorization": "Bearer signed-token"},
+        )
+
+    assert response.status_code == expected_status
+    assert download_calls == (["territory-alpha"] if subject == "global-admin" else [])
+    if subject == "global-admin":
+        assert response.json() == {
+            "message": "territory-alpha data downloaded",
+            "data_dir": "/data/model",
+        }
+
+
+@pytest.mark.parametrize(
+    ("status_code", "body", "expected_status", "expected_detail"),
+    [
+        (
+            404,
+            b'{"detail":"Unknown model: \'molveno\'"}',
+            404,
+            "Unknown model: 'molveno'",
+        ),
+        (502, b"upstream error", 502, "Model API data download failed"),
+    ],
+)
+def test_executor_data_download_propagates_upstream_http_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+    body: bytes,
+    expected_status: int,
+    expected_detail: str,
+) -> None:
+    upstream_response = requests.Response()
+    upstream_response.status_code = status_code
+    upstream_response._content = body
+
+    def raise_http_error(model: str) -> dict[str, str]:
+        raise requests.HTTPError(response=upstream_response)
+
+    monkeypatch.setattr(executor_api, "call_download_data", raise_http_error)
+
+    with pytest.raises(HTTPException) as exc_info:
+        executor_api.download_model_data("molveno")
+
+    assert exc_info.value.status_code == expected_status
+    assert exc_info.value.detail == expected_detail
+
+
+def test_executor_data_download_maps_connection_errors_to_bad_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_connection_error(model: str) -> dict[str, str]:
+        raise requests.ConnectionError("executor unavailable")
+
+    monkeypatch.setattr(executor_api, "call_download_data", raise_connection_error)
+
+    with pytest.raises(HTTPException) as exc_info:
+        executor_api.download_model_data("molveno")
+
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.detail == "Model API data download request failed"
 
 
 @pytest.mark.parametrize(

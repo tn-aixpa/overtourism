@@ -12,7 +12,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from overtourism.backend.api.routes.evaluation import evaluation_router
-from overtourism.backend.api.routes.parameters import configuration_router
+from overtourism.backend.api.routes.executor import configuration_router
 from overtourism.backend.api.routes.problem import problem_router
 from overtourism.backend.api.routes.proposal import proposal_router
 from overtourism.backend.api.routes.scenario import scenario_router
