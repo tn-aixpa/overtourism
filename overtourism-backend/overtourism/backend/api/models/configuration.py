@@ -23,6 +23,7 @@ class Index(BaseModel):
     min_value: float | None = None
     max_value: float | None = None
     default_range: tuple[float, float] | None = None
+    support_labels: dict | None = None
 
 
 class Metadata(BaseModel):
