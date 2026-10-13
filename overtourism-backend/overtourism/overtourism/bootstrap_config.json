@@ -1,0 +1,28 @@
+[
+  {
+    "territory": "molveno",
+    "problem_name": "Sandbox problem",
+    "problem_description": "Sandbox problem.",
+    "problem_extras": {},
+    "scenario_name": "Base scenario",
+    "scenario_description": "Base scenario.",
+    "scenario_extras": {},
+    "proposal_name": "Sandbox proposal",
+    "proposal_description": "Sandbox proposal.",
+    "proposal_status": "draft",
+    "proposal_extras": {}
+  },
+  {
+    "territory": "fazzon",
+    "problem_name": "Sandbox problem",
+    "problem_description": "Sandbox problem.",
+    "problem_extras": {},
+    "scenario_name": "Base scenario",
+    "scenario_description": "Base scenario.",
+    "scenario_extras": {},
+    "proposal_name": "Sandbox proposal",
+    "proposal_description": "Sandbox proposal.",
+    "proposal_status": "draft",
+    "proposal_extras": {}
+  }
+]

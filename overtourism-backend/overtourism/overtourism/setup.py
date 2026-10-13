@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+from typing import Any
 
 from overtourism.backend.auth.identity.sql_repository import SQLUserRepository
 from overtourism.backend.auth.identity.user_manager import UserManager
@@ -68,8 +70,25 @@ user_repository = SQLUserRepository(sql_store.engine, sql_store.session_factory)
 # Bootstrap entites
 # ──────────────────────────────────────────────
 
+with (Path(__file__).parent / "bootstrap_config.json").open(
+    encoding="utf-8"
+) as config_file:
+    bootstrap_config_json: list[dict[str, Any]] = json.load(config_file)
+
 for model in list_models():
-    names_cfg = BootstrapConfig(model["key"])
+    model_config = next(
+        (
+            config
+            for config in bootstrap_config_json
+            if config.get("territory") == model["key"]
+        ),
+        None,
+    )
+    names_cfg = (
+        BootstrapConfig(**model_config)
+        if model_config is not None
+        else BootstrapConfig(model["key"])
+    )
 
     try:
         crud_manager.scenario_manager.read_scenario(names_cfg.scenario_id)
