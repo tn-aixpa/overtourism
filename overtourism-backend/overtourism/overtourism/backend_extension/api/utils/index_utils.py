@@ -159,7 +159,7 @@ def _easter_sunday(year: int) -> pd.Timestamp:
     return pd.Timestamp(year=year, month=int(month), day=int(day))
 
 
-def _italian_festivities(cls, years) -> set:
+def _italian_festivities(years) -> set:
     """
     Italian national public holidays for the given years: fixed-date
     holidays plus Easter Sunday and Easter Monday (Pasquetta).
@@ -181,7 +181,7 @@ def _italian_festivities(cls, years) -> set:
         year = int(year)
         for month, day in fixed:
             festivities.add(pd.Timestamp(year=year, month=month, day=day))
-        easter = cls._easter_sunday(year)
+        easter = _easter_sunday(year)
         festivities.add(easter)
         festivities.add(easter + pd.Timedelta(days=1))
     return festivities

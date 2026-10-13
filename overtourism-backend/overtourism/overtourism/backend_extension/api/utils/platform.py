@@ -26,7 +26,7 @@ def download_index_data(overwrite: bool = False) -> None:
     ]
 
     project = dh.get_project(project_name)
-    download_dir = Path(__file__).parent.parent / "database" / "index_data"
+    download_dir = Path(__file__).parents[3] / "database" / "index_data"
 
     if download_dir.exists() and not overwrite:
         return  # Skip download if the directory already exists
