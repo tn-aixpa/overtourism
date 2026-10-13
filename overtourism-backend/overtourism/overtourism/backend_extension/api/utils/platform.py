@@ -10,27 +10,6 @@ from digitalhub.utils.exceptions import StoreError  # type: ignore[import-untype
 
 # Platform specific settings
 project_name = os.getenv("PROJECT_NAME", "overtourism")
-dataitems = [
-    "df_distribuzione_feriale",
-    "df_distribuzione_festivo",
-    "df_distribuzione_prefestivo",
-    "df_flussi_estate",
-    "df_incidenza_postiletto_non_conv",
-    "df_incidenza_strutture_non_conv",
-    "df_overturismo",
-    "df_stagionalita_presenze",
-    "df_tasso_ricettivita",
-    "df_tasso_turisticita_estate",
-    "df_tasso_turisticita",
-    "df_tasso_variazione_pecentuale",
-    "df_turismo_sommerso",
-]
-artifacts = [
-    "map_apt.geojson",
-    "map_comuni.geojson",
-    "map_vodafone_2024.geojson",
-    "map_vodafone.geojson",
-]
 
 
 def download_index_data(overwrite: bool = False) -> None:

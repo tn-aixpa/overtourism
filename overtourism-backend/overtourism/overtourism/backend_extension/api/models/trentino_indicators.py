@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -14,28 +13,21 @@ from overtourism.overtourism.backend_extension.api.models.trenitno_phenomena imp
     PopulationPhenomenon,
     PresencesPhenomenon,
 )
+from overtourism.overtourism.setup import index_data_path
 
 # ---------------------------------------------------------------------------
 # Source paths
 # ---------------------------------------------------------------------------
-data_dir = (
-    Path(__file__).resolve().parents[4]
-    / "overtourism"
-    / "backend_extension"
-    / "api"
-    / "database"
-    / "index_data"
-)  # TODO: replace this with dataloader
 
-MAP_SHAPEFILE = data_dir / "Com01012026_g" / "Com01012026_g_WGS84.shp"
-MAP_IDS = data_dir / "cities_gdf_base_columns.geojson"
-POPULATION_SOURCE = data_dir / "phen_popolazione.parquet"
-STRUCTURES_SOURCE = data_dir / "phen_strutture.parquet"
-PRESENCES_SOURCE = data_dir / "phen_presenze.parquet"
-FLOWS_SOURCE = data_dir / "phen_flussi.parquet"
-FLOWS_SOURCE_TEMP_2023 = data_dir / "phen_flussi_temp_2023.parquet"
-MACRO_AREAS_FILE = data_dir / "map_comuni_into_apt.json"
-CODICI_COMUNI_FILE = data_dir / "mapping_comuni_ISTAT.json"
+MAP_SHAPEFILE = index_data_path / "Com01012026_g" / "Com01012026_g_WGS84.shp"
+MAP_IDS = index_data_path / "cities_gdf_base_columns.geojson"
+POPULATION_SOURCE = index_data_path / "phen_popolazione.parquet"
+STRUCTURES_SOURCE = index_data_path / "phen_strutture.parquet"
+PRESENCES_SOURCE = index_data_path / "phen_presenze.parquet"
+FLOWS_SOURCE = index_data_path / "phen_flussi.parquet"
+FLOWS_SOURCE_TEMP_2023 = index_data_path / "phen_flussi_temp_2023.parquet"
+MACRO_AREAS_FILE = index_data_path / "map_comuni_into_apt.json"
+CODICI_COMUNI_FILE = index_data_path / "mapping_comuni_ISTAT.json"
 
 # ---------------------------------------------------------------------------
 # Types definition
