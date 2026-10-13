@@ -77,13 +77,18 @@ def _compute_min_max(gdf_final):
         return -1, -1
 
 
+# Columns whose name contains one of these markers are ratios / scores, not counts: they are rounded to
+# the given number of decimals. Every other numeric column (except AREA_NAME / geometry) is a count and
+# is rounded to an integer.
+_DECIMAL_COLUMNS = {"INDICE": 2, "Periodo": 2, "quota": 3, "PageRank": 5}
+
+
 def _round_count_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     out = gdf.copy()
     for col in out.columns:
-        if ("INDICE" in col or "Periodo" in col) and pd.api.types.is_numeric_dtype(
-            out[col]
-        ):
-            out[col] = out[col].round(2)
+        decimals = next((d for m, d in _DECIMAL_COLUMNS.items() if m in col), None)
+        if decimals is not None and pd.api.types.is_numeric_dtype(out[col]):
+            out[col] = out[col].round(decimals)
         elif col not in {
             "AREA_NAME",
             "geometry",

@@ -36,6 +36,24 @@ PHENOMENON_LABELS_IT: dict[str, str] = {
     "presenze_vodafone": "presenze rete mobile",
     "presenze_alb": "presenze alb.",
     "presenze_xalb": "presenze extra-alb.",
+    # FlowPhenomenon-based indicators (RatioFlowsIndicator, FlowsIndicatorLevel;
+    # currently only reachable if INCLUDE_TEMP_REGISTRY is enabled)
+    "flows": "flussi",
+    "flow_value": "valore flusso",
+    # OD flow indicators (phen_flussi_od): quota in ingresso / uscita, quota intra-ambito, PageRank.
+    # Every label contains "quota" / "PageRank": index_utils rounds those columns to decimals, not to integers.
+    "quota_ingresso_combined": "quota ingresso (turisti + escursionisti)",
+    "quota_ingresso_tourist": "quota ingresso turisti",
+    "quota_ingresso_visitor": "quota ingresso escursionisti",
+    "quota_uscita_combined": "quota uscita (turisti + escursionisti)",
+    "quota_uscita_tourist": "quota uscita turisti",
+    "quota_uscita_visitor": "quota uscita escursionisti",
+    "quota_intra_ambito_combined": "quota intra-ambito (turisti + escursionisti)",
+    "quota_intra_ambito_tourist": "quota intra-ambito turisti",
+    "quota_intra_ambito_visitor": "quota intra-ambito escursionisti",
+    "pagerank_combined": "PageRank (turisti + escursionisti)",
+    "pagerank_tourist": "PageRank turisti",
+    "pagerank_visitor": "PageRank escursionisti",
 }
 
 # ---------------------------------------------------------------------------
@@ -160,14 +178,20 @@ class FlowPhenomenon(Phenomenon):
             self.name = name
 
 
-# class ArrivalsPhenomenon(Phenomenon):
-#     """Total arrivals."""
+class FlowIndicatorPhenomenon(Phenomenon):
+    """
+    One column of ``phen_flussi_od``: a yearly flow indicator per comune (quota in ingresso / uscita,
+    quota intra-ambito, PageRank), for TOURIST, VISITOR or their weighted union (``_combined``).
 
-#     name = "arrivals"
-#     temporal_resolution = "daily"
-#     temporal_strategy = "identity"
-#     spatial_resolution = "comune"
-#     spatial_strategy = "identity"
+    The value is yearly, so it is broadcast to every day of the year and averaged over the requested window
+    (a window inside one year returns that year's value). ``name`` must be unique inside an Indicator.
+    """
 
-#     def __init__(self, source, col="NUMARRIVATI_TOT"):
-#         super().__init__(source, col, agg="sum")
+    temporal_resolution = "yearly"
+    temporal_strategy = "constant"
+    spatial_resolution = "comune"
+    spatial_strategy = "identity"
+
+    def __init__(self, source, col, name=None):
+        super().__init__(source, col, agg="mean", municipality_id_col="ID_COMUNE")
+        self.name = name or col
