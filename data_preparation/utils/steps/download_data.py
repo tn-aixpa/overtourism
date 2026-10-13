@@ -25,6 +25,7 @@ from utils.config import (
     setup_logging,
 )
 from utils.datasets import (
+    COVISITS_RAW_FILE,
     PRESENZE_BASE_YEARS,
     PRESENZE_FOLDER,
     PRESENZE_MEASURES,
@@ -36,14 +37,21 @@ logger = logging.getLogger(__name__)
 
 S3_DATA = [
     "Annuario-TavXIII-per-comune-csv.csv",
+    "strutture_annuario_2024.ods",
     "popolazione_2020_2024.parquet",
     "vodafone_attendences.parquet",
+    COVISITS_RAW_FILE,  # Vodafone OD co-visits (flows between areas)
     # ISPAT arrivals / presences (alb, extralb) of the base years; later years come with the updates
     *(
         f"{PRESENZE_FOLDER}/{measure}_{tag}_{year}.csv"
         for year in PRESENZE_BASE_YEARS
         for tag in PRESENZE_TAGS.values()
         for measure in PRESENZE_MEASURES
+    ),
+    *(
+        f"Energia/{folder}/{filename}"
+        for folder in ("ee_prelievi", "gas_prelievi")
+        for filename in ("49_3.csv", "55_1.csv", "56_1.csv", "93_1.csv", "96.csv")
     ),
 ]
 
@@ -86,7 +94,12 @@ def download_raw_base_data(
 
     for name in S3_DATA:
         logger.info("Downloading object %s from S3...", name)
-        fetch_bytes(name, save_to=out_dir)
+        # The energy folders contain identically named category files; keep their
+        # folder names in raw_data so electricity and gas are never overwritten.
+        destination = (
+            out_dir / Path(name).parent.name if name.startswith("Energia/") else out_dir
+        )
+        fetch_bytes(name, save_to=destination)
 
     download_mappings(mapping_dir)
     logger.info("Raw data saved in %s, mappings in %s", out_dir, mapping_dir)

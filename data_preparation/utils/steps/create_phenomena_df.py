@@ -3,7 +3,8 @@
 STEP 3 - Final phenomenon dataframes.
 
 Input : Output/data/data_processed/   (already disaggregated to comune x day, see process_std_data.py)
-Output: Output/data/final_data/       (phen_popolazione, phen_strutture, phen_presenze)
+Output: Output/data/final_data/       (phen_popolazione, phen_strutture, phen_presenze,
+                                       phen_consumption, phen_flussi_od)
         and, with local=False, the platform
 
 Two modes:
@@ -13,7 +14,7 @@ Two modes:
     A phenomenon is computed only if ALL its input datasets are in the update.
 
 Each phenomenon dataframe contains:
-  - DATA: YYYY for yearly data, YYYY-MM-DD for daily data
+  - DATA: YYYY for yearly data (popolazione, strutture, phen_flussi_od), YYYY-MM-DD for daily data
   - ID_COMUNE: zero-padded ISTAT code (e.g. 22001 -> "022001")
 plus the phenomenon's value columns.
 """
@@ -83,6 +84,15 @@ def compute_presenze_trentino(df_alb, df_extralb, df_vodafone):
     return df_mg.sort_values(by=["DATA", "ID_COMUNE"]).reset_index(drop=True)
 
 
+def compute_consumption(df_ee, df_gas):
+    """Combine monthly electricity and gas consumption, retaining keys present in either source."""
+    return (
+        df_ee.merge(df_gas, on=["DATA", "ID_COMUNE"], how="outer")
+        .sort_values(["DATA", "ID_COMUNE"])
+        .reset_index(drop=True)
+    )
+
+
 # phenomenon -> how it is built from the processed dataframes {dataset: df}
 BUILDERS = {
     "phen_popolazione": lambda pr: pr["popolazione"],
@@ -90,6 +100,11 @@ BUILDERS = {
     "phen_presenze": lambda pr: compute_presenze_trentino(
         pr["presenze_alb"], pr["presenze_extralb"], pr["vodafone"]
     ),
+    "phen_consumption": lambda pr: compute_consumption(
+        pr["ee_prelievi"], pr["gas_prelievi"]
+    ),
+    # yearly flow indicators per comune (quota in ingresso / uscita, quota intra-ambito, PageRank)
+    "phen_flussi_od": lambda pr: pr["vodafone_covisits"],
 }
 assert set(BUILDERS) == set(PHENOMENA)
 

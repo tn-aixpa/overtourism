@@ -37,6 +37,21 @@ KIND_SCHEMAS = {
     ],
     "vodafone": ["locId", "date", "value", "userProfile", "locType"],
     "presenze_raw": ["mese"],  # ISPAT monthly arrivals / presences, used as downloaded (not normalized)
+    # Vodafone OD co-visits (flows between areas)
+    "vodafone_covisits": [
+        "date",
+        "locType",
+        "sourceId",
+        "sourceAmbito",
+        "targetId",
+        "targetAmbito",
+        "covisitType",
+        "userCountry",
+        "userProfile",
+        "value",
+    ],
+    # PLACEHOLDER: the format of the energy data of the updates is not known yet
+    "energia": [],
 }
 
 # kind -> datasets it can feed
@@ -45,6 +60,8 @@ KIND_DATASETS = {
     "strutture": {"strutture"},
     "vodafone": {"vodafone"},
     "presenze_raw": {"presenze_alb", "presenze_extralb"},
+    "vodafone_covisits": {"vodafone_covisits"},
+    "energia": {"ee_prelievi", "gas_prelievi"},
 }
 
 
@@ -66,12 +83,15 @@ class Adapter:
     kind: str
     func: Callable
     description: str = ""
+    # True: stands in for a source whose update format is not known yet. It is refused when the
+    # update config is validated, i.e. before anything is downloaded.
+    placeholder: bool = False
 
 
 _REGISTRY: dict[str, Adapter] = {}
 
 
-def register_adapter(name: str, *, kind: str):
+def register_adapter(name: str, *, kind: str, placeholder: bool = False):
     if kind not in KIND_SCHEMAS:
         raise ValueError(f"Unknown kind {kind!r}. Valid: {sorted(KIND_SCHEMAS)}")
 
@@ -79,7 +99,9 @@ def register_adapter(name: str, *, kind: str):
         if name in _REGISTRY:
             raise ValueError(f"Adapter {name!r} already registered")
         doc = (inspect.getdoc(func) or "").splitlines()
-        _REGISTRY[name] = Adapter(name, kind, func, doc[0] if doc else "")
+        _REGISTRY[name] = Adapter(
+            name, kind, func, doc[0] if doc else "", placeholder=placeholder
+        )
         return func
 
     return decorator

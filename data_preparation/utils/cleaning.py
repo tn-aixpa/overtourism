@@ -23,6 +23,12 @@ COMUNE_NAME_OVERRIDES = {
     "MAZZIN-MAZIN": "MAZZIN",
     "MOENA-MOENA": "MOENA",
     "PALU DEL FERSINA-PALAI EN BERSNTOL": "PALU DEL FERSINA",
+    "PALU' DEL FERSINA": "PALU DEL FERSINA",
+    "ROVERE' DELLA LUNA": "ROVERE DELLA LUNA",
+    "RUFFRE'-MENDOLA": "RUFFRE-MENDOLA",
+    "SAN MICHELE ALL' ADIGE": "SAN MICHELE ALL'ADIGE",
+    "SANT' ORSOLA TERME": "SANT'ORSOLA TERME",
+    "SORAGA": "SORAGA DI FASSA",
     "SAN GIOVANNI DI FASSA-SEN JAN": "SAN GIOVANNI DI FASSA",
     "SORAGA DI FASSA-SORAGA": "SORAGA DI FASSA",
 }
@@ -129,9 +135,11 @@ def remove_unnamed(df):
 
     df = df.copy()
     df.columns = [
-        str(t).strip()
-        if str(b).startswith("Unnamed") or pd.isna(b)
-        else f"{str(t).strip()} {str(b).strip()}"
+        (
+            str(t).strip()
+            if str(b).startswith("Unnamed") or pd.isna(b)
+            else f"{str(t).strip()} {str(b).strip()}"
+        )
         for t, b in zip(top, bottom)
     ]
     return df
@@ -147,7 +155,8 @@ def grouped_presenze_columns(groups):
 
 def concat_keep_last(frames, name="dataset", key=("DATA", "ID_COMUNE")):
     """Stacks dataframes; on a duplicated key (DATA + ID_COMUNE) the LAST frame wins.
-    ID_COMUNE may hold lists, hence make_hashable. Result sorted by key, columns as in the first frame."""
+    ID_COMUNE may hold lists, hence make_hashable. Result sorted by key, columns as in the first frame.
+    """
     frames = list(frames)
     if len(frames) == 1 and not frames[0].duplicated(list(key)).any():
         return frames[0]

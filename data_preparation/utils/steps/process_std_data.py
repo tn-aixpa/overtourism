@@ -5,11 +5,15 @@ STEP 2 - Processing.
 Input : Output/data/normalized/   (+ mapping json files, read from Output/mapping; the ISPAT presences
         arrivals / presences are read from Output/data/raw_data/, they are not normalized)
 Output: Output/data/data_processed/   (popolazione_pr, strutture_pr, vodafone_pr,
-                                       presenze_alb_pr, presenze_extralb_pr)
+                                       presenze_alb_pr, presenze_extralb_pr,
+                                       ee_prelievi_pr, gas_prelievi_pr, vodafone_covisits_pr)
 
 Transformations: ID_COMUNE resolution, filtering, selection of the columns, computation of
 aggregated columns, disaggregation of the presences to comune x day (vodafone: areas -> comuni by beds;
 ISPAT: APT / provincia x month -> comune x day, with the average stay of the month, see stay_distribution.py). Every row has a single ID_COMUNE.
+Energy categories are summed per comune-month and divided evenly over the calendar days of each month.
+The Vodafone OD co-visits are aggregated per YEAR and turned into flow indicators per comune (quota in
+ingresso / in uscita, quota intra-ambito, PageRank, per profile): one row per comune and year, see flows.py.
 """
 
 import logging
@@ -31,11 +35,25 @@ from utils.config import (
     NORMALIZED_DIR,
     PROCESSED_DIR,
     RAW_DIR,
+    REFERENCES,
     TYPE_FORMAT,
     MAPPING_FILES,
     setup_logging,
 )
 from utils.datasets import (  # noqa: F401  (re-exported for convenience)
+    COVISITS_FIXED_WEIGHTS,
+    COVISITS_FULL_YEAR_DAYS,
+    COVISITS_WEIGHT_BOOTSTRAP,
+    COVISITS_WEIGHT_MIN,
+    COVISITS_WEIGHT_MODE,
+    COVISITS_WEIGHT_CATEGORIES,
+    COVISITS_WEIGHT_PLACEBO_MAX,
+    COVISITS_WEIGHTS_FILE,
+    COVISITS_METRICS,
+    COVISITS_MIN_T,
+    COVISITS_PAGERANK_DAMPING,
+    COVISITS_PROFILES,
+    COVISITS_VALUE_COLS,
     DATASETS,
     PRESENZE_BASE_YEARS,
     PRESENZE_MEASURES,
@@ -44,9 +62,12 @@ from utils.datasets import (  # noqa: F401  (re-exported for convenience)
     POPOLAZIONE_VALUE_COLS,
     PRESENZE_ALB_VALUE_COLS,
     PRESENZE_XALB_VALUE_COLS,
+    EE_PRELIEVI_VALUE_COLS,
+    GAS_PRELIEVI_VALUE_COLS,
     STRUTTURE_VALUE_COLS,
     VODAFONE_VALUE_COLS,
 )
+from utils.steps.standardize_raw_data import ENERGY_MONTHS
 from utils.adapters.presenze import MONTHS_MAPPING
 from utils.disaggregation import (
     assert_sums_match,
@@ -54,8 +75,17 @@ from utils.disaggregation import (
     disaggregate,
     is_whole,
 )
+from utils.flows import build_area_comune, comune_flow_indicators
 from utils.stay_distribution import distribute_by_stay
 from utils.io import read_df, read_json, save_computed_dfs
+from utils.profile_weights import (
+    build_energy_targets,
+    estimate_profile_weights,
+    fixed_profile_weights,
+    load_profile_weights,
+    normalize_code,
+    save_profile_weights,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +209,109 @@ def process_vodafone(
     return standard_ordering_cols(out.drop(columns="_TID").reset_index(drop=True))
 
 
+def stack_covisits(frames):
+    """Standardized OD frames in order: on the dates present in a later frame the later one wins
+    (a later file corrects the earlier ones, like vodafone_attendences / _new)."""
+    frames = list(frames)
+    for k in range(len(frames) - 1):
+        later_dates = set().union(*[set(f["DATA"]) for f in frames[k + 1 :]])
+        n0 = len(frames[k])
+        frames[k] = frames[k][~frames[k]["DATA"].isin(later_dates)]
+        if len(frames[k]) < n0:
+            logger.info(
+                "[covisits] %d rows replaced by the later data", n0 - len(frames[k])
+            )
+    od = pd.concat(frames, ignore_index=True)
+    key = [c for c in od.columns if c != "value"]
+    return od.groupby(key, as_index=False, observed=True)[
+        "value"
+    ].sum()  # duplicated rows
+
+
+def covisits_area_comune(mapping_dir, mapping_vodafone, mapping_comuni):
+    """Area -> ID_COMUNE table of the OD co-visits (geojson of the areas + mapping_vodafone)."""
+    geojson = Path(mapping_dir) / Path(REFERENCES["geojson"]).name
+    return build_area_comune(geojson, mapping_vodafone, mapping_comuni)
+
+
+def covisits_profile_weights(
+    od, area_comune, energy, strutture, out_dir, *, reuse=False, mode=COVISITS_WEIGHT_MODE
+):
+    """Weights {userProfile: w} used to merge TOURIST and VISITOR in the `_combined` indicators.
+
+    mode "fixed": COVISITS_FIXED_WEIGHTS. mode "estimate": learnt from the consumption by usage category,
+    `energy` = {carrier: energy_monthly_by_category(...)} e.g. {"ee": ..., "gas": ...} (see profile_weights.py and
+    the categories in COVISITS_WEIGHT_CATEGORIES), and saved in out_dir/COVISITS_WEIGHTS_FILE.
+    reuse=True (yearly updates): the saved weights are loaded instead, so that the years of the base build
+    and of the updates stay comparable; without a saved file the fixed weights are used."""
+    file = Path(out_dir) / COVISITS_WEIGHTS_FILE
+    if mode == "fixed":
+        res = fixed_profile_weights(COVISITS_FIXED_WEIGHTS)
+    elif reuse:
+        res = load_profile_weights(file)
+        if res is None:
+            logger.warning(
+                "[covisits] %s not found (run the base build): fixed weights %s",
+                file, COVISITS_FIXED_WEIGHTS,
+            )
+            res = fixed_profile_weights(COVISITS_FIXED_WEIGHTS, reason="no saved weights")
+        else:
+            logger.info("[covisits] weights loaded from %s: %s", file, res["weights"])
+        return res["weights"]
+    else:
+        t = build_energy_targets(energy, COVISITS_WEIGHT_CATEGORIES)
+        for carrier, found in t["codes_found"].items():
+            absent = sorted(set(normalize_code(c) for c in COVISITS_WEIGHT_CATEGORIES) - set(found))
+            if absent:
+                logger.warning(
+                    "[covisits] %s: usage codes %s configured in COVISITS_WEIGHT_CATEGORIES but not in the data "
+                    "(codes in the data: %s)", carrier, absent, found,
+                )
+        res = estimate_profile_weights(
+            od,
+            area_comune,
+            t["targets"],
+            strutture,
+            profiles=list(COVISITS_PROFILES),
+            diagnostic_targets=t["diagnostic"],
+            placebo_targets=t["placebo"],
+            placebo_max=COVISITS_WEIGHT_PLACEBO_MAX,
+            n_boot=COVISITS_WEIGHT_BOOTSTRAP,
+            min_weight=COVISITS_WEIGHT_MIN,
+            fallback=COVISITS_FIXED_WEIGHTS,
+        )
+    save_profile_weights(res, file)
+    logger.info("[covisits] weights (%s): %s -> %s", res["source"], res["weights"], file)
+    return res["weights"]
+
+
+def process_covisits(df, area_comune, weights=None):
+    """Vodafone OD co-visits: area x area x day -> comune x YEAR flow indicators.
+
+    Wide output, one row per comune and year: DATA (year), ID_COMUNE (zero-padded) and
+    `<metric>_<profile>` (quota_ingresso, quota_uscita, quota_intra_ambito, pagerank; tourist, visitor and
+    combined) + `giorni_coperti`. `weights` ({userProfile: w}, default COVISITS_FIXED_WEIGHTS) merge the two
+    profiles in the `_combined` columns. A year with fewer than COVISITS_FULL_YEAR_DAYS days is partial: it
+    is kept, flagged by `giorni_coperti` and by a warning."""
+    out = comune_flow_indicators(
+        df,
+        area_comune,
+        min_t=COVISITS_MIN_T,
+        damping=COVISITS_PAGERANK_DAMPING,
+        profiles=COVISITS_PROFILES,
+        metrics=COVISITS_METRICS,
+        weights=weights or COVISITS_FIXED_WEIGHTS,
+    )
+    partial = out.groupby("DATA")["giorni_coperti"].first()
+    for year, days in partial[partial < COVISITS_FULL_YEAR_DAYS].items():
+        logger.warning(
+            "[process_covisits] %s is a partial year (%d days): compare it with care",
+            year,
+            days,
+        )
+    return standard_ordering_cols(out[["DATA", "ID_COMUNE"] + COVISITS_VALUE_COLS])
+
+
 def process_beds(strutture_std, mapping_comuni):
     """Beds per comune and year from the NORMALIZED strutture: DATA (year), ID_COMUNE, posti_letto_alb
     (`alberghieri posti_letto`), posti_letto_xalb (`extra alb. Posti_letto`)."""
@@ -199,6 +332,79 @@ def process_beds(strutture_std, mapping_comuni):
         }
     )
     return df[["DATA", "ID_COMUNE", BEDS_ALB_COL, BEDS_XALB_COL]].reset_index(drop=True)
+
+
+def _energy_monthly(df, mapping_comuni, value_col, source, by_category=False):
+    """Standardized energy rows -> monthly consumption per comune (DATA = first day of the month, ID_COMUNE,
+    value_col), summing the usage categories (`codice_utilizzo`) or, with by_category=True, keeping them
+    (one row per comune, month and category, with the column `codice_utilizzo`)."""
+    df = df.copy()
+    df = remove_provincia(df, comune_col="LOCATION", upper=True)
+    df["ID_COMUNE"] = df["LOCATION"].apply(
+        lambda name: resolve_id_comune(name, mapping_comuni)
+    )
+    missing = sorted(df.loc[df["ID_COMUNE"].isna(), "LOCATION"].dropna().unique())
+    if missing:
+        logger.warning(
+            "[%s] Excluding locations without municipality IDs: %s", source, missing
+        )
+    df = df[df["ID_COMUNE"].notna()].copy()
+    df["ID_COMUNE"] = pad_id_comune(df["ID_COMUNE"])
+
+    keys = ["DATA", "ID_COMUNE"] + (["codice_utilizzo"] if by_category else [])
+    long = df.melt(
+        id_vars=keys,
+        value_vars=list(ENERGY_MONTHS),
+        var_name="_MONTH",
+        value_name=value_col,
+    )
+    raw_values = long[value_col]
+    long[value_col] = pd.to_numeric(raw_values, errors="coerce")
+    invalid = raw_values.notna() & long[value_col].isna()
+    if invalid.any():
+        raise ValueError(
+            f"[{source}] non-numeric consumption values: "
+            f"{raw_values.loc[invalid].head().tolist()}"
+        )
+    month_numbers = {month: number for number, month in enumerate(ENERGY_MONTHS, 1)}
+    long["DATA"] = pd.to_datetime(
+        {
+            "year": pd.to_numeric(long["DATA"], errors="raise").astype(int),
+            "month": long["_MONTH"].map(month_numbers),
+            "day": 1,
+        }
+    )
+    return (
+        long.groupby(keys, as_index=False)[value_col]
+        .sum(min_count=1)
+        .sort_values(keys)
+        .reset_index(drop=True)
+    )
+
+
+def energy_monthly_by_category(df, mapping_comuni, source):
+    """Monthly consumption per comune AND usage category, for the estimation of the profile weights:
+    ID_COMUNE, month ('YYYY-MM'), code (`codice_utilizzo` as a string), y. Rows without a value are dropped."""
+    m = _energy_monthly(df, mapping_comuni, "y", source, by_category=True)
+    m["month"] = m["DATA"].dt.strftime("%Y-%m")
+    m["code"] = m["codice_utilizzo"].map(normalize_code)
+    return m.dropna(subset=["y"])[["ID_COMUNE", "month", "code", "y"]].reset_index(drop=True)
+
+
+def process_energy(df, mapping_comuni, value_col, source):
+    """Sum energy categories, then spread each municipality-month total evenly over its days."""
+    monthly = _energy_monthly(df, mapping_comuni, value_col, source)
+    daily = monthly.loc[monthly.index.repeat(monthly["DATA"].dt.days_in_month)].copy()
+    if not daily.empty:
+        days_in_month = daily["DATA"].dt.days_in_month
+        day_offsets = daily.groupby(level=0).cumcount()
+        daily["DATA"] = daily["DATA"] + pd.to_timedelta(day_offsets, unit="D")
+        daily[value_col] = daily[value_col] / days_in_month
+    out = daily.reset_index(drop=True)
+    # Keep dates as ISO strings in parquet as well: timestamp columns are exposed by
+    # some downstream readers as epoch-millisecond integers.
+    out["DATA"] = out["DATA"].dt.strftime("%Y-%m-%d")
+    return standard_ordering_cols(out)
 
 
 def read_strutture_std(normalized_dir, type_format=TYPE_FORMAT):
@@ -400,12 +606,33 @@ def process_data(
         bed_col=BEDS_XALB_COL,
         out_col=PRESENZE_XALB_VALUE_COLS[0],
     )
+    ee_pr = process_energy(
+        std["ee_prelievi"], mapping_comuni, EE_PRELIEVI_VALUE_COLS[0], "ee_prelievi"
+    )
+    gas_pr = process_energy(
+        std["gas_prelievi"], mapping_comuni, GAS_PRELIEVI_VALUE_COLS[0], "gas_prelievi"
+    )
+    area_comune = covisits_area_comune(mapping_dir, mapping_vodafone, mapping_comuni)
+    covisits_weights = covisits_profile_weights(
+        std["vodafone_covisits"],
+        area_comune,
+        {  # consumption BY usage category (not the aggregate): see COVISITS_WEIGHT_CATEGORIES
+            "ee": energy_monthly_by_category(std["ee_prelievi"], mapping_comuni, "ee_prelievi"),
+            "gas": energy_monthly_by_category(std["gas_prelievi"], mapping_comuni, "gas_prelievi"),
+        },
+        strutture_pr,
+        out_dir,
+    )
+    covisits_pr = process_covisits(std["vodafone_covisits"], area_comune, covisits_weights)
     dict_processed = {
         "popolazione_pr": process_popolazione(std["popolazione"], mapping_comuni),
         "strutture_pr": strutture_pr,
         "vodafone_pr": vodafone_pr,
         "presenze_alb_pr": alb_pr,
         "presenze_extralb_pr": extralb_pr,
+        DATASETS["ee_prelievi"].processed_name: ee_pr,
+        DATASETS["gas_prelievi"].processed_name: gas_pr,
+        DATASETS["vodafone_covisits"].processed_name: covisits_pr,
     }
 
     save_computed_dfs(

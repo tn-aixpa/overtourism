@@ -14,18 +14,12 @@ datasets:
   strutture:
     enabled: true
     sources:
-      - file: strutture_annuario_2024.ods
-        reader: excel
-        reader_kwargs: {engine: odf}
-        adapter: strutture_annuario_2024
-        adapter_kwargs: {year: 2024}
-        label: "2024"                       # kept separate until structure parts are merged
       - file: numero_strutture_ISPAT_2025.xlsx
         reader: excel
         reader_kwargs: {header: [0, 1]}
         adapter: strutture_annuario
         adapter_kwargs: {year: 2025}
-        label: "2025"                       
+        label: "2025"
 
   vodafone:
     enabled: true
@@ -57,10 +51,18 @@ datasets:
   presenze_extralb:
     enabled: true
     sources:                                  # arrivals + presences, used as downloaded (no normalization)
+      - file: Presenze/arrivi_exalb_2024.csv
+        reader: csv
+        adapter: ispat_presenze_raw
+        adapter_kwargs: {year: 2024, measure: arrivi}
       - file: Presenze/presenze_exalb_2024.csv
         reader: csv
         adapter: ispat_presenze_raw
         adapter_kwargs: {year: 2024, measure: presenze}
+      - file: Presenze/arrivi_exalb_2025.csv
+        reader: csv
+        adapter: ispat_presenze_raw
+        adapter_kwargs: {year: 2025, measure: arrivi}
       - file: Presenze/presenze_exalb_2025.csv
         reader: csv
         adapter: ispat_presenze_raw

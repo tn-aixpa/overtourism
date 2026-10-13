@@ -87,7 +87,7 @@ def parse_config(raw: dict) -> UpdateConfig:
     for dataset, body in raw["datasets"].items():
         if dataset not in ALL_DATASETS:
             raise ConfigError(
-                f"Unknown dataset {dataset!r}. Valid: {list(ALL_DATASETS)}"
+                f"Unknown dataset {dataset!r}. Available datasets: {list(ALL_DATASETS)}"
             )
         body = body or {}
         unknown_body = set(body) - {"sources", "enabled"}
@@ -159,6 +159,11 @@ def validate_config(config: UpdateConfig) -> UpdateConfig:
                 adapter = get_adapter(src.adapter)
             except KeyError as e:
                 raise ConfigError(f"{where}: {e.args[0]}") from None
+            if adapter.placeholder:
+                raise ConfigError(
+                    f"{where}: adapter {src.adapter!r} is a placeholder, the format of "
+                    f"the update data of {dataset!r} is not defined yet"
+                )
             if dataset not in KIND_DATASETS[adapter.kind]:
                 raise ConfigError(
                     f"{where}: adapter {src.adapter!r} (kind {adapter.kind!r}) cannot feed {dataset!r}"

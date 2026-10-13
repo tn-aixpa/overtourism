@@ -10,3 +10,9 @@ from utils.adapters.base import RawData, register_adapter
 def vodafone_raw(raw: RawData) -> pd.DataFrame:
     """Vodafone export already in the expected layout (locId, date, value, ...): returned unchanged."""
     return raw.df
+
+
+@register_adapter("vodafone_covisits_raw", kind="vodafone_covisits")
+def vodafone_covisits_raw(raw: RawData) -> pd.DataFrame:
+    """Vodafone OD co-visits export already in the expected layout (date, locType, sourceId, ...): returned unchanged."""
+    return raw.df

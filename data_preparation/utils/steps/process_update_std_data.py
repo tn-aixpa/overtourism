@@ -42,12 +42,16 @@ from utils.steps.process_std_data import (
     presenze_alb_area_ids,
     presenze_exalb_area_ids,
     presenze_files,
+    covisits_area_comune,
+    covisits_profile_weights,
     process_beds,
+    process_covisits,
     process_popolazione,
     process_presenze_stay,
     process_strutture,
     process_vodafone,
     read_strutture_std,
+    stack_covisits,
 )
 from utils.update.spec import config_from_argv, load_config, plan_parts
 
@@ -65,9 +69,13 @@ PROCESSORS = {
     "vodafone": lambda df, maps, strutture: process_vodafone(
         df, maps["mapping_vodafone"], strutture
     ),
+    # PLACEHOLDER: the update format of the energy data is not known yet (see adapters/energia.py)
+    "energia": lambda df, maps, strutture: _not_defined("energia"),
 }
-# the ISPAT presences (alb / extralb) are not normalized: processed from the raw files, see below
-assert set(PROCESSORS) | {"presenze_raw"} == set(KIND_DATASETS)
+# not processed part by part, see below: the ISPAT presences (alb / extralb) are not normalized and are
+# processed from the raw files; the OD co-visits are yearly indicators, computed on all the days of a year
+# (base + every part of the update)
+assert set(PROCESSORS) | {"presenze_raw", "vodafone_covisits"} == set(KIND_DATASETS)
 
 PROCESS_ORDER = (
     "popolazione",
@@ -75,7 +83,38 @@ PROCESS_ORDER = (
     "vodafone",
     "presenze_alb",
     "presenze_extralb",
+    "vodafone_covisits",
+    "ee_prelievi",  # PLACEHOLDER, see adapters/energia.py
+    "gas_prelievi",  # PLACEHOLDER, see adapters/energia.py
 )
+
+
+def _not_defined(kind):
+    raise NotImplementedError(f"The update of the '{kind}' data is not defined yet")
+
+
+def _process_covisits(parts, normalized_dir, mapping_dir, maps, type_format, out_dir):
+    """Flow indicators of the update. They are yearly, so they are computed on ALL the days of each year:
+    the standardized co-visits of the base build (if any) + every part of the update (later ones win on
+    the common dates). Only the years touched by the update are returned."""
+    spec = DATASETS["vodafone_covisits"]
+    new = [read_df(normalized_dir, part.std_name, type_format) for part in parts]
+    try:
+        base = [read_df(normalized_dir, spec.std_name, type_format)]
+    except FileNotFoundError:
+        logger.warning("[vodafone_covisits] no base data: only the update is used")
+        base = []
+    od = stack_covisits(base + new)
+    area_comune = covisits_area_comune(
+        mapping_dir, maps["mapping_vodafone"], maps["mapping_comuni"]
+    )
+    # the weights of the base build are reused (not re-estimated): the years stay comparable
+    weights = covisits_profile_weights(od, area_comune, {}, None, out_dir, reuse=True)
+    out = process_covisits(od, area_comune, weights)
+    years = {
+        int(str(d)[:4]) for df in new for d in df["DATA"].unique()
+    }  # years with data in the update
+    return out[out["DATA"].isin(years)].reset_index(drop=True)
 
 
 def _processed_reference(dataset, done, processed_dir, type_format):
@@ -157,6 +196,14 @@ def process_update_std_data(
                 )
             logger.info("[%s] processing the raw arrivals / presences", dataset)
             done[dataset] = _process_presenze(dataset, config, maps, beds, raw_dir)
+            continue
+        if dataset == "vodafone_covisits":
+            ds_parts = [p for p in parts if p.dataset == dataset]
+            if ds_parts:
+                logger.info("[%s] processing %s", dataset, [p.std_name for p in ds_parts])
+                done[dataset] = _process_covisits(
+                    ds_parts, normalized_dir, mapping_dir, maps, type_format, out_dir
+                )
             continue
         frames = []
         for part in (p for p in parts if p.dataset == dataset):

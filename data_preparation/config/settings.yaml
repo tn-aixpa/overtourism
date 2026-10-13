@@ -48,11 +48,25 @@ datasets:
     std: ""
     processed: presenze_extralb_pr
     update: presenze_extralb_update_pr
+  ee_prelievi:
+    std: ee_prelievi_std
+    processed: ee_prelievi_pr
+    update: ee_prelievi_update_pr
+  gas_prelievi:
+    std: gas_prelievi_std
+    processed: gas_prelievi_pr
+    update: gas_prelievi_update_pr
+  vodafone_covisits:
+    std: vodafone_covisits_std
+    processed: vodafone_covisits_pr
+    update: vodafone_covisits_update_pr
 
 phenomena:
   phen_popolazione: [popolazione]
   phen_strutture: [strutture]
   phen_presenze: [vodafone, presenze_alb, presenze_extralb]
+  phen_consumption: [ee_prelievi, gas_prelievi]
+  phen_flussi_od: [vodafone_covisits]
 
 # Data lake / platform
 platform:
