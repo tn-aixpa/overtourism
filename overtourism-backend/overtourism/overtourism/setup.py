@@ -107,6 +107,7 @@ for model in list_models():
         territory=names_cfg.territory,
         name=names_cfg.scenario_name,
         description=names_cfg.scenario_description,
+        summary=names_cfg.scenario_summary,
         extras=names_cfg.scenario_extras,
     )
     evaluation = crud_manager.create_evaluation(names_cfg.scenario_id)

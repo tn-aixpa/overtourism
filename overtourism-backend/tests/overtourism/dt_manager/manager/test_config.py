@@ -16,6 +16,7 @@ def test_base_problem_config_defaults() -> None:
     assert config.scenario_id == "default_base_scenario"
     assert config.scenario_name == "Base scenario"
     assert config.scenario_description == "Base scenario."
+    assert config.scenario_summary is None
     assert config.scenario_extras == {}
     assert config.proposal_id == "default_base_proposal"
     assert config.proposal_name == "Sandbox proposal"
@@ -32,6 +33,7 @@ def test_base_problem_config_accepts_custom_values() -> None:
         problem_extras={"region": "tn"},
         scenario_name="Scenario Alpha",
         scenario_description="Primary scenario",
+        scenario_summary="Scenario overview",
         scenario_extras={"kind": "scenario"},
         proposal_name="Proposal Alpha",
         proposal_description="Primary proposal",
@@ -47,6 +49,7 @@ def test_base_problem_config_accepts_custom_values() -> None:
     assert config.scenario_id == "territory-alpha_base_scenario"
     assert config.scenario_name == "Scenario Alpha"
     assert config.scenario_description == "Primary scenario"
+    assert config.scenario_summary == "Scenario overview"
     assert config.scenario_extras == {"kind": "scenario"}
     assert config.proposal_id == "territory-alpha_base_proposal"
     assert config.proposal_name == "Proposal Alpha"

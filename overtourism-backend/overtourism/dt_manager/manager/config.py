@@ -19,6 +19,7 @@ class BootstrapConfig:
     scenario_id: str = field(init=False)
     scenario_name: str = "Base scenario"
     scenario_description: str = "Base scenario."
+    scenario_summary: str | None = None
     scenario_extras: dict = field(default_factory=dict)
 
     proposal_id: str = field(init=False)
