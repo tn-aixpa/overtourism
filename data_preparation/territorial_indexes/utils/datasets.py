@@ -13,10 +13,16 @@ from utils.config import BASE_WINDOW, DATASET_FILES, PHENOMENA_FILES
 # value columns of the processed dataframes
 POPOLAZIONE_VALUE_COLS = ["popolazione"]
 STRUTTURE_VALUE_COLS = [
-    "tot_postiletto_non_conv",
-    "tot_postiletto",
-    "tot_strutture_non_conv",
+    "letti_alb",
+    "letti_exalb",
+    "letti_alloggi_turistici",
+    "letti_alloggi_disp",
+    "strutture_alb",
+    "strutture_exalb",
+    "strutture_alloggi_turistici",
+    "strutture_alloggi_disp",
     "tot_strutture",
+    "tot_postiletto",
 ]
 VODAFONE_VALUE_COLS = ["presenze"]
 PRESENZE_ALB_VALUE_COLS = ["presenze_alb"]
@@ -26,14 +32,25 @@ GAS_PRELIEVI_VALUE_COLS = ["gas_services"]
 
 # Vodafone OD co-visits (flows between areas) -> yearly flow indicators per comune, see utils/flows.py.
 # One column per metric and profile (`<metric>_<profile in lower case>`), plus the days covered by the year
-COVISITS_RAW_FILE = "vodafone_covisits.csv"  # data-lake object / name in raw_data of the base build
+COVISITS_RAW_FILE = (
+    "vodafone_covisits.csv"  # data-lake object / name in raw_data of the base build
+)
 COVISITS_LOC_TYPE = "TN_MKT_AL_3"  # area level kept (same as the vodafone presences)
-COVISITS_PROFILES = ("TOURIST", "VISITOR")  # kept separate, the other profiles are discarded
-COVISITS_TOTAL_ROWS_ONLY = True  # only the rows with an empty userCountry (total over all the countries)
+COVISITS_PROFILES = (
+    "TOURIST",
+    "VISITOR",
+)  # kept separate, the other profiles are discarded
+COVISITS_TOTAL_ROWS_ONLY = (
+    True  # only the rows with an empty userCountry (total over all the countries)
+)
 COVISITS_METRICS = ("quota_ingresso", "quota_uscita", "quota_intra_ambito", "pagerank")
-COVISITS_MIN_T = 100  # minimum yearly user-days in an area to compute the mobility shares
+COVISITS_MIN_T = (
+    100  # minimum yearly user-days in an area to compute the mobility shares
+)
 COVISITS_PAGERANK_DAMPING = 0.85
-COVISITS_FULL_YEAR_DAYS = 360  # fewer days with data: the year is partial (warning, `giorni_coperti`)
+COVISITS_FULL_YEAR_DAYS = (
+    360  # fewer days with data: the year is partial (warning, `giorni_coperti`)
+)
 # Weighted union of the two profiles (a tourist-day and a visitor-day do not weigh the same): columns
 # `<metric>_combined`, computed on user-days multiplied by the weight of their profile (see utils/flows.py).
 # Simple fixed coefficient: a visitor-day (excursionist, no overnight stay) counts half of a tourist-day.
@@ -49,7 +66,9 @@ COVISITS_VALUE_COLS = [
 # ISPAT presences (alb / extralb): arrivals + presences per month, read from the raw files (no normalization).
 # Files: Presenze/<arrivi|presenze>_<alb|exalb>_<year>.csv ; the base build downloads the years of its window (period.start .. period.base_end), the updates the others.
 PRESENZE_FOLDER = "Presenze"
-PRESENZE_BASE_YEARS = tuple(range(BASE_WINDOW.start.year, BASE_WINDOW.end.year + 1))  # 2022..2024
+PRESENZE_BASE_YEARS = tuple(
+    range(BASE_WINDOW.start.year, BASE_WINDOW.end.year + 1)
+)  # 2022..2024
 PRESENZE_MEASURES = ("arrivi", "presenze")
 # True: a stay that starts at the end of a month goes on in the next one (uses the previous month's arrivals and stay);
 # False: every month is distributed using only its own arrivals and stay

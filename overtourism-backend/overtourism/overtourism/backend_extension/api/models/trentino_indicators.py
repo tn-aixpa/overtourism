@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from overtourism.overtourism.backend_extension.api.models.indicator import Indicator
 from overtourism.overtourism.backend_extension.api.models.trenitno_phenomena import (
     BedsPhenomenon,
-    ExtraBedsPhenomenon,
-    ExtraFacilitiesPhenomenon,
     FacilitiesTotalPhenomenon,
     FlowIndicatorPhenomenon,
     PopulationPhenomenon,
@@ -59,10 +56,18 @@ _REGISTRY: dict[str, Callable[[], Indicator]] = {
     "turisticita": lambda: TourismIndexIndicator(
         POPULATION_SOURCE, PRESENCES_SOURCE, "presenze_vodafone"
     ),
-    "ospitalita-strutture": lambda: HospitalityIndexFacilitiesIndicator(
+    "incidenza-alloggi-turistici-strutture": lambda: TouristAccommodationFacilitiesIndicator(
         STRUCTURES_SOURCE
     ),
-    "ospitalita-letti": lambda: HospitalityIndexBedsIndicator(STRUCTURES_SOURCE),
+    "incidenza-alloggi-disposizione-strutture": lambda: AvailableAccommodationFacilitiesIndicator(
+        STRUCTURES_SOURCE
+    ),
+    "incidenza-alloggi-turistici-letti": lambda: TouristAccommodationBedsIndicator(
+        STRUCTURES_SOURCE
+    ),
+    "incidenza-alloggi-disposizione-letti": lambda: AvailableAccommodationBedsIndicator(
+        STRUCTURES_SOURCE
+    ),
     "turismo-sommerso": lambda: HiddenTourismIndicator(PRESENCES_SOURCE),
     "quota-mobilita-ingresso": lambda: InboundMobilityShareIndicator(FLOWS_OD_SOURCE),
     "quota-mobilita-uscita": lambda: OutboundMobilityShareIndicator(FLOWS_OD_SOURCE),
@@ -126,44 +131,114 @@ class TourismIndexIndicator(Indicator):
         )
 
 
-class HospitalityIndexFacilitiesIndicator(Indicator):
-    """Share of non-hotel facilities over total facilities."""
+def _hospitality_share(numerator: str, denominator_components: tuple[str, ...]):
+    def combine(df: pd.DataFrame, **_extra) -> pd.Series:
+        denominator = df[list(denominator_components)].sum(axis=1)
+        return df[numerator].div(denominator.replace(0, np.nan))
 
-    name = "Indice di incidenza ospitalità non convenzionale (strutture)"
-    type = INDICATORS_TYPES[1]
-    description = "Questo indice di incidenza dell'ospitalità non convenzionale misura il <strong>rapporto</strong> fra il  <strong>numero di strutture ricettive non convenzionali</strong> e il <strong>numero totale delle strutture</strong> presenti in un'area. L'indice è calcolato partendo dai dati ISPAT relativi al numero degli esercizi alberghieri e extra-alberghieri."
-    index_value_unit_description = (
-        "Percentuale strutture ricettive non conv. rispetto al totale"
-    )
-
-    def __init__(self, source_file):
-        super().__init__(
-            phenomena=[
-                ExtraFacilitiesPhenomenon(source_file),
-                FacilitiesTotalPhenomenon(source_file),
-            ],
-            combinator=self.divide("extra_Facilities", "Facilities_total"),
-        )
+    combine.__name__ = f"hospitality_share({numerator})"
+    return combine
 
 
-class HospitalityIndexBedsIndicator(Indicator):
-    """Share of non-hotel beds over total beds."""
+class _HospitalityShareIndicator(Indicator):
+    """Common construction for a hospitality component's share of a total."""
 
-    name = "Indice di incidenza ospitalità non convenzionale (posti letto)"
-    type = INDICATORS_TYPES[1]
-    description = "Questo indice di incidenza dell'ospitalità non convenzionale misura il <strong>rapporto</strong> fra il <strong>numero di posti letto in strutture ricettive non convenzionali</strong> e il <strong>numero totale di posti letto</strong> in tutte le strutture di un'area. L'indice è calcolato partendo dai dati ISPAT al numero degli esercizi alberghieri e extra-alberghieri."
-    index_value_unit_description = (
-        "Percentuale letti in strututre ricettive non conv. rispetto al totale"
-    )
+    component_columns: tuple[str, ...] = ()
+    numerator_column: str = ""
+    phenomenon_class = None
 
     def __init__(self, source_file):
         super().__init__(
             phenomena=[
-                ExtraBedsPhenomenon(source_file),
-                BedsPhenomenon(source_file),
+                self.phenomenon_class(source_file, col=column, name=column)
+                for column in self.component_columns
             ],
-            combinator=self.divide("extra_beds", "beds"),
+            combinator=_hospitality_share(
+                self.numerator_column, self.component_columns
+            ),
         )
+
+
+class _HospitalityFacilitiesShareIndicator(_HospitalityShareIndicator):
+    phenomenon_class = FacilitiesTotalPhenomenon
+    type = INDICATORS_TYPES[1]
+    index_value_unit_description = "Quota delle strutture sul totale"
+
+
+class TouristAccommodationFacilitiesIndicator(_HospitalityFacilitiesShareIndicator):
+    """Tourist accommodation facilities over tourist, hotel and extra-hotel facilities."""
+
+    name = "Incidenza Alloggi turistici (strutture)"
+    description = (
+        "Misura la quota delle <strong>strutture degli alloggi turistici</strong> "
+        "sul totale composto da alloggi turistici, strutture alberghiere ed "
+        "extra-alberghiere."
+    )
+    numerator_column = "strutture_alloggi_turistici"
+    component_columns = (
+        "strutture_alloggi_turistici",
+        "strutture_alb",
+        "strutture_exalb",
+    )
+
+
+class AvailableAccommodationFacilitiesIndicator(_HospitalityFacilitiesShareIndicator):
+    """Available accommodation facilities over all accommodation facilities."""
+
+    name = "Incidenza Alloggi a disposizione (strutture)"
+    description = (
+        "Misura la quota delle <strong>strutture degli alloggi a disposizione</strong> "
+        "sul totale composto da alloggi turistici, alloggi a disposizione, "
+        "strutture alberghiere ed extra-alberghiere."
+    )
+    numerator_column = "strutture_alloggi_disp"
+    component_columns = (
+        "strutture_alloggi_turistici",
+        "strutture_alloggi_disp",
+        "strutture_alb",
+        "strutture_exalb",
+    )
+
+
+class _HospitalityBedsShareIndicator(_HospitalityShareIndicator):
+    phenomenon_class = BedsPhenomenon
+    type = INDICATORS_TYPES[1]
+    index_value_unit_description = "Quota dei posti letto sul totale"
+
+
+class TouristAccommodationBedsIndicator(_HospitalityBedsShareIndicator):
+    """Tourist accommodation beds over tourist, hotel and extra-hotel beds."""
+
+    name = "Incidenza Alloggi turistici (posti letto)"
+    description = (
+        "Misura la quota dei <strong>posti letto degli alloggi turistici</strong> "
+        "sul totale composto da alloggi turistici, strutture alberghiere ed "
+        "extra-alberghiere."
+    )
+    numerator_column = "letti_alloggi_turistici"
+    component_columns = (
+        "letti_alloggi_turistici",
+        "letti_alb",
+        "letti_exalb",
+    )
+
+
+class AvailableAccommodationBedsIndicator(_HospitalityBedsShareIndicator):
+    """Available accommodation beds over all accommodation beds."""
+
+    name = "Incidenza Alloggi a disposizione (posti letto)"
+    description = (
+        "Misura la quota dei <strong>posti letto degli alloggi a disposizione</strong> "
+        "sul totale composto da alloggi turistici, alloggi a disposizione, "
+        "strutture alberghiere ed extra-alberghiere."
+    )
+    numerator_column = "letti_alloggi_disp"
+    component_columns = (
+        "letti_alloggi_turistici",
+        "letti_alloggi_disp",
+        "letti_alb",
+        "letti_exalb",
+    )
 
 
 class HiddenTourismIndicator(Indicator):

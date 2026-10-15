@@ -27,11 +27,15 @@ PHENOMENON_LABELS_IT: dict[str, str] = {
     "population": "popolazione",
     # TourismIndexIndicator ("indice-turisticita")
     "presences": "presenze",
-    # HospitalityIndexFacilitiesIndicator ("indice-ospitalita-strutture")
-    "extra_Facilities": "strutture extra-alb.",
-    "Facilities_total": "strutture totali",
-    # HospitalityIndexBedsIndicator ("indice-ospitalita-letti")
-    "extra_beds": "posti letto extra-alb.",
+    # Hospitality indicators
+    "strutture_alloggi_turistici": "strutture alloggi turistici",
+    "strutture_alloggi_disp": "strutture alloggi a disposizione",
+    "strutture_alb": "strutture alberghiere",
+    "strutture_exalb": "strutture extra-alberghiere",
+    "letti_alloggi_turistici": "posti letto alloggi turistici",
+    "letti_alloggi_disp": "posti letto alloggi a disposizione",
+    "letti_alb": "posti letto alberghieri",
+    "letti_exalb": "posti letto extra-alberghieri",
     # HiddenTourismIndicator ("indice-turismo-sommerso")
     "presenze_vodafone": "presenze rete mobile",
     "presenze_alb": "presenze alb.",
@@ -88,8 +92,10 @@ class BedsPhenomenon(Phenomenon):
     spatial_resolution = "comune"
     spatial_strategy = "identity"
 
-    def __init__(self, source, col="tot_postiletto"):
+    def __init__(self, source, col="tot_postiletto", name=None):
         super().__init__(source, col, agg="mean")
+        if name is not None:
+            self.name = name
 
 
 class ExtraBedsPhenomenon(Phenomenon):
@@ -101,8 +107,10 @@ class ExtraBedsPhenomenon(Phenomenon):
     spatial_resolution = "comune"
     spatial_strategy = "identity"
 
-    def __init__(self, source, col="tot_postiletto_non_conv"):
+    def __init__(self, source, col="tot_postiletto_non_conv", name=None):
         super().__init__(source, col, agg="mean")
+        if name is not None:
+            self.name = name
 
 
 class FacilitiesTotalPhenomenon(Phenomenon):
@@ -114,8 +122,10 @@ class FacilitiesTotalPhenomenon(Phenomenon):
     spatial_resolution = "comune"
     spatial_strategy = "identity"
 
-    def __init__(self, source, col="tot_strutture"):
+    def __init__(self, source, col="tot_strutture", name=None):
         super().__init__(source, col, agg="mean")
+        if name is not None:
+            self.name = name
 
 
 class ExtraFacilitiesPhenomenon(Phenomenon):
@@ -127,8 +137,10 @@ class ExtraFacilitiesPhenomenon(Phenomenon):
     spatial_resolution = "comune"
     spatial_strategy = "identity"
 
-    def __init__(self, source, col="tot_strutture_non_conv"):
+    def __init__(self, source, col="tot_strutture_non_conv", name=None):
         super().__init__(source, col, agg="mean")
+        if name is not None:
+            self.name = name
 
 
 class PopulationPhenomenon(Phenomenon):

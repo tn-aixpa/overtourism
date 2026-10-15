@@ -109,27 +109,32 @@ def process_strutture(df, mapping_comuni, window=BASE_WINDOW):
     df = _filtering_strutture(df, window)
     df = remove_provincia(df, comune_col="LOCATION")
 
-    # CONV = alberghieri + extralberghieri (from the raw components, not from the raw CONV totals)
-    df["tot_strutture_conv"] = df["alberghieri strutture"] + df["extra alb. Strutture"]
-    df["tot_postiletto_conv"] = (
-        df["alberghieri posti_letto"] + df["extra alb. Posti_letto"]
+    # Rename source columns
+    df = df.rename(
+        columns={
+            "alberghieri posti_letto": "letti_alb",
+            "extra alb. Posti_letto": "letti_exalb",
+            "all. privati posti_letto": "letti_alloggi_turistici",
+            "all. disposizione posti_letto": "letti_alloggi_disp",
+            "alberghieri strutture": "strutture_alb",
+            "extra alb. Strutture": "strutture_exalb",
+            "all. privati numero": "strutture_alloggi_turistici",
+            "all.disposizione numero": "strutture_alloggi_disp",
+        }
     )
 
-    df["tot_strutture_non_conv"] = (
-        df["all. privati numero"] + df["all.disposizione numero"]
+    df["tot_strutture"] = (
+        df["strutture_alb"] + df["strutture_exalb"] + df["strutture_alloggi_turistici"]
     )
-    df["tot_postiletto_non_conv"] = (
-        df["all. privati posti_letto"] + df["all. disposizione posti_letto"]
+    df["tot_postiletto"] = (
+        df["letti_alb"] + df["letti_exalb"] + df["letti_alloggi_turistici"]
     )
 
-    # Compute total as the sum of CONV and NON CONV
-    df["tot_strutture"] = df["tot_strutture_conv"] + df["tot_strutture_non_conv"]
-    df["tot_postiletto"] = df["tot_postiletto_conv"] + df["tot_postiletto_non_conv"]
-
-    # Set ID_COMUNE (resolving the bilingual overrides)
+    # Resolve municipality IDs
     df["ID_COMUNE"] = df["LOCATION"].apply(
         lambda x: resolve_id_comune(x, mapping_comuni)
     )
+
     missing = df.loc[df["ID_COMUNE"].isna(), "LOCATION"].unique()
     if len(missing) > 0:
         logger.warning(
@@ -138,6 +143,7 @@ def process_strutture(df, mapping_comuni, window=BASE_WINDOW):
         )
 
     df["ID_COMUNE"] = pad_id_comune(df["ID_COMUNE"])
+
     return standard_ordering_cols(df[["DATA", "ID_COMUNE"] + STRUTTURE_VALUE_COLS])
 
 
@@ -176,7 +182,9 @@ def process_vodafone(
     df["DATA"] = pd.to_datetime(df["DATA"].astype(str), errors="coerce").dt.strftime(
         "%Y-%m-%d"
     )
-    df = clip(df, window, name="vodafone")  # before the (expensive) split over the comuni
+    df = clip(
+        df, window, name="vodafone"
+    )  # before the (expensive) split over the comuni
     df["ID_COMUNE"] = pad_id_comune(df["ID_COMUNE"]).apply(
         normalize_id_comune
     )  # hashable
@@ -239,7 +247,9 @@ def process_covisits(df, area_comune, window=BASE_WINDOW):
     combined) + `giorni_coperti`. The `_combined` columns merge the two profiles with the fixed weights
     COVISITS_PROFILE_WEIGHTS (TOURIST 1, VISITOR 0.5). A year with fewer than COVISITS_FULL_YEAR_DAYS days is partial: it
     is kept, flagged by `giorni_coperti` and by a warning."""
-    df = clip(df, window, name="covisits")  # only the days of the window enter the yearly indicators
+    df = clip(
+        df, window, name="covisits"
+    )  # only the days of the window enter the yearly indicators
     out = comune_flow_indicators(
         df,
         area_comune,
@@ -262,7 +272,8 @@ def process_covisits(df, area_comune, window=BASE_WINDOW):
 def process_beds(strutture_std, mapping_comuni, window=BASE_WINDOW):
     """Beds per comune and year from the NORMALIZED strutture: DATA (year), ID_COMUNE, posti_letto_alb
     (`alberghieri posti_letto`), posti_letto_xalb (`extra alb. Posti_letto`). The years up to the end of
-    `window` are kept (the update needs the previous years too, hence only the end matters beyond start)."""
+    `window` are kept (the update needs the previous years too, hence only the end matters beyond start).
+    """
     df = _filtering_strutture(strutture_std, window)
     df = remove_provincia(df, comune_col="LOCATION")
     df["ID_COMUNE"] = df["LOCATION"].apply(
@@ -562,15 +573,25 @@ def process_data(
         window=window,
     )
     ee_pr = process_energy(
-        std["ee_prelievi"], mapping_comuni, EE_PRELIEVI_VALUE_COLS[0], "ee_prelievi", window
+        std["ee_prelievi"],
+        mapping_comuni,
+        EE_PRELIEVI_VALUE_COLS[0],
+        "ee_prelievi",
+        window,
     )
     gas_pr = process_energy(
-        std["gas_prelievi"], mapping_comuni, GAS_PRELIEVI_VALUE_COLS[0], "gas_prelievi", window
+        std["gas_prelievi"],
+        mapping_comuni,
+        GAS_PRELIEVI_VALUE_COLS[0],
+        "gas_prelievi",
+        window,
     )
     area_comune = covisits_area_comune(mapping_dir, mapping_vodafone, mapping_comuni)
     covisits_pr = process_covisits(std["vodafone_covisits"], area_comune, window)
     dict_processed = {
-        "popolazione_pr": process_popolazione(std["popolazione"], mapping_comuni, window),
+        "popolazione_pr": process_popolazione(
+            std["popolazione"], mapping_comuni, window
+        ),
         "strutture_pr": strutture_pr,
         "vodafone_pr": vodafone_pr,
         "presenze_alb_pr": alb_pr,
