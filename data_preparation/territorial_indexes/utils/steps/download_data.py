@@ -31,7 +31,7 @@ from utils.datasets import (
     PRESENZE_MEASURES,
     PRESENZE_TAGS,
 )
-from utils.io import ensure_dir, save_computed_dfs
+from utils.io import ensure_dir, raw_path, save_computed_dfs
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ S3_DATA = [
     "strutture_annuario_2024.ods",
     "popolazione_2020_2024.parquet",
     "vodafone_attendences.parquet",
+    "vodafone_attendences_new.csv",  # completes the presences up to the end of the base window (2024-12-31)
     COVISITS_RAW_FILE,  # Vodafone OD co-visits (flows between areas)
     # ISPAT arrivals / presences (alb, extralb) of the base years; later years come with the updates
     *(
@@ -96,10 +97,7 @@ def download_raw_base_data(
         logger.info("Downloading object %s from S3...", name)
         # The energy folders contain identically named category files; keep their
         # folder names in raw_data so electricity and gas are never overwritten.
-        destination = (
-            out_dir / Path(name).parent.name if name.startswith("Energia/") else out_dir
-        )
-        fetch_bytes(name, save_to=destination)
+        fetch_bytes(name, save_to=raw_path(name, out_dir).parent)
 
     download_mappings(mapping_dir)
     logger.info("Raw data saved in %s, mappings in %s", out_dir, mapping_dir)
@@ -120,7 +118,9 @@ def download_update_raw_data(
     for dataset in config.datasets:
         for src in config.sources[dataset]:
             logger.info("[%s] downloading %s...", dataset, src.file)
-            fetch_bytes(src.file, local_dir=local_dir, save_to=out_dir)
+            fetch_bytes(
+                src.file, local_dir=local_dir, save_to=raw_path(src.file, out_dir).parent
+            )
 
     download_mappings(mapping_dir, local_dir=local_dir)
     logger.info("Update raw data saved in %s, mappings in %s", out_dir, mapping_dir)

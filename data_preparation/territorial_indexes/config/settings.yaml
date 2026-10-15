@@ -1,14 +1,24 @@
 # Settings of the data-preparation pipeline. Edit this file to change directories, format or platform.
-# Used by BOTH gen_base_phenomenon_dataframes.py and update_phenomenon_dataframes.py.
+# Used by BOTH gen_phenomenon_dataframes.py and update_phenomenon_dataframes.py.
+# `output_dir`, `paths.raw/normalized/final` and `platform` are shared with the model pipelines, which read their own
+# copy in model/config/settings.yaml: keep them aligned (both write in data_preparation/Output).
 
 # Root of everything the pipeline writes. A relative path is resolved from the data_preparation folder.
-output_dir: Output
+output_dir: ../Output
+
+# Time window of the data. Rows outside it are discarded (applied in step 2 and to the final phenomena).
+# Yearly data (DATA = YYYY: popolazione, strutture, flussi OD) are kept if their YEAR is inside the window.
+period:
+  start: "2022-01-01"        # nothing before this date is kept, in the base build AND in the update
+  base_end: "2024-12-31"     # base build (gen_phenomenon_dataframes.py): data up to this date
+  update_start: "2025-01-01" # yearly update (update_phenomenon_dataframes.py): data of this period only,
+  update_end: "2025-12-31"   #   appended to the base phenomena (can be overridden by `period:` in the update yaml)
 
 # Sub-directories, relative to output_dir (absolute paths are accepted too).
 paths:
   # reference mappings (json): ONE place, used by the base build AND the update
   mapping: mapping
-  # base build (gen_base_phenomenon_dataframes.py)
+  # base build (gen_phenomenon_dataframes.py)
   raw: data/raw_data
   normalized: data/normalized
   processed: data/data_processed        # base build <dataset>_pr; the update writes <dataset>_update_pr here

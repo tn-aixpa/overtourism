@@ -4,6 +4,7 @@
 import logging
 from pathlib import Path
 
+import pandas as pd
 import yaml
 
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
@@ -21,6 +22,7 @@ _PATH_KEYS = (
 )
 _PLATFORM_KEYS = ("project", "s3_bucket", "s3_prefix", "dhcore_env")
 _REFERENCE_KEYS = ("mapping_comuni", "mapping_vodafone", "mapping_apt", "geojson")
+_PERIOD_KEYS = ("start", "base_end", "update_start", "update_end")
 _DATASET_FILE_KEYS = ("std", "processed", "update")
 
 
@@ -35,6 +37,7 @@ def load_settings(path=SETTINGS_FILE) -> dict:
                     "output_dir",
                     "type_format",
                     "paths",
+                    "period",
                     "platform",
                     "references",
                     "datasets",
@@ -42,6 +45,7 @@ def load_settings(path=SETTINGS_FILE) -> dict:
                 ),
             ),
             ("paths", _PATH_KEYS),
+            ("period", _PERIOD_KEYS),
             ("platform", _PLATFORM_KEYS),
             ("references", _REFERENCE_KEYS),
         )
@@ -63,12 +67,19 @@ def load_settings(path=SETTINGS_FILE) -> dict:
         raise KeyError(f"{path}: missing setting(s) {missing}")
     if settings["type_format"] not in TYPE_FORMATS:
         raise ValueError(f"{path}: type_format must be one of {TYPE_FORMATS}")
+    period = {k: pd.Timestamp(str(v)) for k, v in settings["period"].items()}
+    if not (
+        period["start"] <= period["base_end"] < period["update_start"] <= period["update_end"]
+    ):
+        raise ValueError(
+            f"{path}: period must satisfy start <= base_end < update_start <= update_end, got {settings['period']}"
+        )
     return settings
 
 
 def _resolve(base: Path, value) -> Path:
     p = Path(value).expanduser()
-    return p if p.is_absolute() else base / p
+    return (p if p.is_absolute() else base / p).resolve()
 
 
 _S = load_settings()
@@ -84,6 +95,14 @@ NORMALIZED_DIR = _P["normalized"]
 PROCESSED_DIR = _P["processed"]
 FINAL_DIR = _P["final"]
 REFERENCES = _S["references"]
+
+# time window (utils/window.py): base build = [start, base_end], update = [update_start, update_end]
+from utils.window import Window  # noqa: E402
+
+_PER = {k: pd.Timestamp(str(v)) for k, v in _S["period"].items()}
+DATA_START = _PER["start"]
+BASE_WINDOW = Window(_PER["start"], _PER["base_end"])
+UPDATE_WINDOW = Window(_PER["update_start"], _PER["update_end"])
 
 TYPE_FORMAT = _S["type_format"]
 DATASET_FILES = _S["datasets"]

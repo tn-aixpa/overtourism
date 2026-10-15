@@ -14,7 +14,7 @@ Run from the data_preparation folder (as the other entry points).
 | 0 Sources | sources.py | raw files (local copies or <raw>/fazzon/) |
 | 1 Standardize | standardize.py | <normalized>/fazzon/*.parquet |
 | 2 Reference datasets | reference_datasets.py | <final>/fazzon/*.parquet |
-| 3 Upload (optional) | utils.remote.log_dataframe | platform dataitems |
+| 3 Upload (optional) | model.common.remote.log_dataframe | platform dataitems |
 """
 
 import argparse
@@ -26,8 +26,8 @@ from model.fazzon.config import FAZZON_FINAL_DIR, FAZZON_NORMALIZED_DIR, load_co
 from model.fazzon.reference_datasets import build_all
 from model.fazzon.sources import resolve_sources
 from model.fazzon.standardize import standardize_all
-from utils.config import setup_logging
-from utils.io import save_computed_dfs
+from model.common.config import setup_logging
+from model.common.io import save_computed_dfs
 
 logger = logging.getLogger(__name__)
 

@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 from utils.adapters import RawData
+from utils.io import raw_path
 from utils.readers import read_grouped_presenze_tsv
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,41 @@ def read_ispat_grouped_tsv(buffer, sep="\t") -> RawData:
     return RawData(read_grouped_presenze_tsv(buffer, sep=sep))
 
 
+def read_energy_csv(buffer) -> RawData:
+    """Energy category file (semicolon-delimited, same layout as the base build, see
+    standardize_raw_data.read_energy_category): already in the standard energy layout."""
+    from utils.steps.standardize_raw_data import read_energy_category
+
+    return RawData(read_energy_category(buffer))
+
+
+def read_covisits_csv(buffer, start=None, end=None, chunksize=1_000_000) -> RawData:
+    """Vodafone OD co-visits csv, read in chunks (the file is too big to be kept whole): only the rows of the
+    time window and the ones used by the flow indicators are kept (see standardize_covisits_columns).
+    Default window: the whole year(s) of the update period (the indicators are yearly)."""
+    from utils.config import UPDATE_WINDOW
+    from utils.datasets import COVISITS_LOC_TYPE, COVISITS_PROFILES, COVISITS_TOTAL_ROWS_ONLY
+
+    start = pd.Timestamp(str(start)) if start else pd.Timestamp(UPDATE_WINDOW.start.year, 1, 1)
+    end = pd.Timestamp(str(end)) if end else UPDATE_WINDOW.end
+    parts = []
+    for chunk in pd.read_csv(buffer, dtype=str, keep_default_na=False, chunksize=chunksize):
+        day = pd.to_datetime(chunk["date"], errors="coerce")
+        keep = (
+            (day >= start)
+            & (day <= end)
+            & (chunk["locType"].str.strip() == COVISITS_LOC_TYPE)
+            & chunk["userProfile"].str.strip().isin(COVISITS_PROFILES)
+        )
+        if COVISITS_TOTAL_ROWS_ONLY:
+            keep &= chunk["userCountry"].str.strip() == ""
+        parts.append(chunk[keep])
+    return RawData(pd.concat(parts, ignore_index=True))
+
+
 READERS = {
+    "energy_csv": read_energy_csv,
+    "covisits_csv": read_covisits_csv,
     "csv": read_csv,
     "excel": read_excel,
     "ispat_apt_tsv": read_ispat_apt_tsv,
@@ -52,7 +87,7 @@ def read_source(file: str, reader: str, reader_kwargs=None, *, raw_dir) -> RawDa
     """Parses `file` (already downloaded in `raw_dir`) with the named reader."""
     if reader not in READERS:
         raise KeyError(f"Unknown reader {reader!r}. Available: {sorted(READERS)}")
-    path = Path(raw_dir) / Path(file).name
+    path = raw_path(file, raw_dir)
     if not path.exists():
         raise FileNotFoundError(f"{path} not found: run the download step first")
     logger.info("Reading %s (reader=%s)", path, reader)

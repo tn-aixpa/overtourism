@@ -1,8 +1,8 @@
 # Fazzon data preparation
 
 Reference datasets for the Fazzon (Lago dei Caprioli, Val di Sole) model. Same structure as the
-main pipeline (`data_preparation/README.md`), reusing its `utils` and `config/settings.yaml`
-(directories, format, platform). Run from the `data_preparation` folder:
+territorial indexes pipeline (`territorial_indexes/README.md`), reusing `model/common/` (config, io, remote) and
+`model/config/settings.yaml` (directories, platform). Run from the `data_preparation` folder:
 
 ```bash
 python -m model.fazzon.prepare                  # steps 0-2
@@ -18,7 +18,7 @@ python -m model.fazzon.exploratory_analysis     # exploratory analysis and plots
 | 0 Sources | `sources.py` | data lake or `local_source_dir` (`fazzon.yaml`) | raw files |
 | 1 Standardize | `standardize.py` | raw files | `Output/data/normalized/fazzon/*.parquet` |
 | 2 Reference datasets | `reference_datasets.py` | normalized tables | `Output/data/final_data/fazzon/*.parquet` |
-| 3 Upload | `utils.remote.log_dataframe` | reference datasets | platform dataitems (`--upload`) |
+| 3 Upload | `model.common.remote.log_dataframe` | reference datasets | platform dataitems (`--upload`) |
 
 * **Sources** (`fazzon.yaml`): each source has its data-lake key and its local path. With
   `local_source_dir` set, or with `--local-sources DIR`, the files are read in place;

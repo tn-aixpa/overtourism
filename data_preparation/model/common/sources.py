@@ -22,7 +22,7 @@ from pathlib import Path
 
 import yaml
 
-from utils.io import ensure_dir
+from model.common.io import ensure_dir
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +61,8 @@ def load_sources_config(path, local_source_dir=None) -> SourcesConfig:
 
 def _download_s3(source: Source, dest: Path) -> None:
     """Streams one object to `dest` (download_file does not hold it in memory)."""
-    from utils.config import S3_PREFIX
-    from utils.remote import init_s3
+    from model.common.config import S3_PREFIX
+    from model.common.remote import init_s3
 
     _, bucket = init_s3()
     tmp = dest.with_suffix(dest.suffix + ".part")

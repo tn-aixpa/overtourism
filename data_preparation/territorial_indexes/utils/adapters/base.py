@@ -50,8 +50,24 @@ KIND_SCHEMAS = {
         "userProfile",
         "value",
     ],
-    # PLACEHOLDER: the format of the energy data of the updates is not known yet
-    "energia": [],
+    # energy category files (standard layout of read_energy_category)
+    "energia": [
+        "DATA",
+        "LOCATION",
+        "codice_utilizzo",
+        "gennaio",
+        "febbraio",
+        "marzo",
+        "aprile",
+        "maggio",
+        "giugno",
+        "luglio",
+        "agosto",
+        "settembre",
+        "ottobre",
+        "novembre",
+        "dicembre",
+    ],
 }
 
 # kind -> datasets it can feed

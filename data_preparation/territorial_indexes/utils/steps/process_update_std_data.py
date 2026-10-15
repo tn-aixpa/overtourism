@@ -17,9 +17,12 @@ win on a duplicated DATA + ID_COMUNE.
 import logging
 from pathlib import Path
 
+import pandas as pd
+
 from utils.adapters import KIND_DATASETS
 from utils.cleaning import concat_keep_last
 from utils.config import (
+    DATA_START,
     MAPPING_DIR,
     NORMALIZED_DIR,
     PROCESSED_DIR,
@@ -29,6 +32,8 @@ from utils.config import (
 )
 from utils.datasets import (
     DATASETS,
+    EE_PRELIEVI_VALUE_COLS,
+    GAS_PRELIEVI_VALUE_COLS,
     PRESENZE_ALB_VALUE_COLS,
     PRESENZE_MEASURES,
     PRESENZE_TAGS,
@@ -46,6 +51,7 @@ from utils.steps.process_std_data import (
     covisits_profile_weights,
     process_beds,
     process_covisits,
+    process_energy,
     process_popolazione,
     process_presenze_stay,
     process_strutture,
@@ -54,23 +60,30 @@ from utils.steps.process_std_data import (
     stack_covisits,
 )
 from utils.update.spec import config_from_argv, load_config, plan_parts
+from utils.window import Window, clip
 
 logger = logging.getLogger(__name__)
 
-# kind -> processing of the normalized parts (same functions of the base build).
-# `strutture` = processed strutture (beds for the split of the vodafone areas)
+# kind -> processing of the normalized parts (same functions of the base build), restricted to `window`
+# (the period of the update). `strutture` = processed strutture (beds for the split of the vodafone areas)
 PROCESSORS = {
-    "popolazione": lambda df, maps, strutture: process_popolazione(
-        df, maps["mapping_comuni"]
+    "popolazione": lambda df, maps, strutture, window, dataset: process_popolazione(
+        df, maps["mapping_comuni"], window
     ),
-    "strutture": lambda df, maps, strutture: process_strutture(
-        df, maps["mapping_comuni"]
+    "strutture": lambda df, maps, strutture, window, dataset: process_strutture(
+        df, maps["mapping_comuni"], window
     ),
-    "vodafone": lambda df, maps, strutture: process_vodafone(
-        df, maps["mapping_vodafone"], strutture
+    "vodafone": lambda df, maps, strutture, window, dataset: process_vodafone(
+        df, maps["mapping_vodafone"], strutture, window=window
     ),
-    # PLACEHOLDER: the update format of the energy data is not known yet (see adapters/energia.py)
-    "energia": lambda df, maps, strutture: _not_defined("energia"),
+    # the same function for electricity and gas: only the value column / source name change
+    "energia": lambda df, maps, strutture, window, dataset: process_energy(
+        df,
+        maps["mapping_comuni"],
+        (EE_PRELIEVI_VALUE_COLS if dataset == "ee_prelievi" else GAS_PRELIEVI_VALUE_COLS)[0],
+        dataset,
+        window,
+    ),
 }
 # not processed part by part, see below: the ISPAT presences (alb / extralb) are not normalized and are
 # processed from the raw files; the OD co-visits are yearly indicators, computed on all the days of a year
@@ -84,16 +97,14 @@ PROCESS_ORDER = (
     "presenze_alb",
     "presenze_extralb",
     "vodafone_covisits",
-    "ee_prelievi",  # PLACEHOLDER, see adapters/energia.py
-    "gas_prelievi",  # PLACEHOLDER, see adapters/energia.py
+    "ee_prelievi",
+    "gas_prelievi",
 )
 
 
-def _not_defined(kind):
-    raise NotImplementedError(f"The update of the '{kind}' data is not defined yet")
-
-
-def _process_covisits(parts, normalized_dir, mapping_dir, maps, type_format, out_dir):
+def _process_covisits(
+    parts, normalized_dir, mapping_dir, maps, type_format, out_dir, window
+):
     """Flow indicators of the update. They are yearly, so they are computed on ALL the days of each year:
     the standardized co-visits of the base build (if any) + every part of the update (later ones win on
     the common dates). Only the years touched by the update are returned."""
@@ -104,17 +115,20 @@ def _process_covisits(parts, normalized_dir, mapping_dir, maps, type_format, out
     except FileNotFoundError:
         logger.warning("[vodafone_covisits] no base data: only the update is used")
         base = []
-    od = stack_covisits(base + new)
+    # whole days of the years touched by the update (base std of earlier years + update), never after its end
+    od = clip(
+        stack_covisits(base + new),
+        Window(max(DATA_START, pd.Timestamp(window.start.year, 1, 1)), window.end),
+        name="covisits",
+    )
     area_comune = covisits_area_comune(
         mapping_dir, maps["mapping_vodafone"], maps["mapping_comuni"]
     )
     # the weights of the base build are reused (not re-estimated): the years stay comparable
     weights = covisits_profile_weights(od, area_comune, {}, None, out_dir, reuse=True)
-    out = process_covisits(od, area_comune, weights)
-    years = {
-        int(str(d)[:4]) for df in new for d in df["DATA"].unique()
-    }  # years with data in the update
-    return out[out["DATA"].isin(years)].reset_index(drop=True)
+    out = process_covisits(od, area_comune, weights, window)
+    # the indicators are yearly: only the years of the window (the base years stay as they are)
+    return clip(out, window, name="vodafone_covisits")
 
 
 def _processed_reference(dataset, done, processed_dir, type_format):
@@ -134,7 +148,7 @@ def _processed_reference(dataset, done, processed_dir, type_format):
     return concat_keep_last(frames, name=f"{dataset} reference")
 
 
-def _process_presenze(dataset, config, maps, beds, raw_dir):
+def _process_presenze(dataset, config, maps, beds, raw_dir, window):
     """alb / extralb of the update: arrivals + presences files listed in the config -> comune x day."""
     tag = PRESENZE_TAGS[dataset]
     files, years = {}, set()
@@ -166,6 +180,7 @@ def _process_presenze(dataset, config, maps, beds, raw_dir):
         beds,
         bed_col=bed_col,
         out_col=DATASETS[dataset].value_cols[0],
+        window=window,
     )
 
 
@@ -180,6 +195,8 @@ def process_update_std_data(
     """Processes the standardized update parts; returns {<dataset>_update_pr: dataframe}."""
     config = load_config(config)
     normalized_dir = Path(normalized_dir)
+    window = config.window
+    logger.info("Time window of the update: %s", window)
 
     maps = load_mappings(mapping_dir)
     parts = plan_parts(config)
@@ -193,16 +210,25 @@ def process_update_std_data(
                 beds = process_beds(
                     read_strutture_std(normalized_dir, type_format),
                     maps["mapping_comuni"],
+                    Window(DATA_START, window.end),  # also the earlier years: beds of the nearest year
                 )
             logger.info("[%s] processing the raw arrivals / presences", dataset)
-            done[dataset] = _process_presenze(dataset, config, maps, beds, raw_dir)
+            done[dataset] = _process_presenze(
+                dataset, config, maps, beds, raw_dir, window
+            )
             continue
         if dataset == "vodafone_covisits":
             ds_parts = [p for p in parts if p.dataset == dataset]
             if ds_parts:
                 logger.info("[%s] processing %s", dataset, [p.std_name for p in ds_parts])
                 done[dataset] = _process_covisits(
-                    ds_parts, normalized_dir, mapping_dir, maps, type_format, out_dir
+                    ds_parts,
+                    normalized_dir,
+                    mapping_dir,
+                    maps,
+                    type_format,
+                    out_dir,
+                    window,
                 )
             continue
         frames = []
@@ -214,10 +240,18 @@ def process_update_std_data(
                 if dataset == "vodafone"
                 else None
             )
-            frames.append(PROCESSORS[part.kind](std, maps, strutture))
+            frames.append(
+                PROCESSORS[part.kind](std, maps, strutture, window, part.dataset)
+            )
         if frames:
             done[dataset] = concat_keep_last(frames, name=dataset)
 
+    empty = sorted(d for d, df in done.items() if df.empty)
+    if empty:
+        raise ValueError(
+            f"No {empty} data in the update window {window}: check the files of the update config "
+            "(do they contain that period?)"
+        )
     dict_processed = {DATASETS[d].update_name: df for d, df in done.items()}
     save_computed_dfs(
         dict_processed,

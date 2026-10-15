@@ -15,6 +15,10 @@ dependencies = [
     "geopandas",
     "boto3>=1.43.110",
     "digitalhub==0.15.11",
+    "pytest>=9.1.1",
+    "matplotlib>=3.10.9",
+    "scipy>=1.15.3",
+    "scikit-learn>=1.7.2",
 ]
 
 [project.optional-dependencies]

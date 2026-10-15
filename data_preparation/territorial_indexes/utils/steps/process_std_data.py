@@ -31,6 +31,8 @@ from utils.cleaning import (
     standard_ordering_cols,
 )
 from utils.config import (
+    BASE_WINDOW,
+    DATA_START,
     MAPPING_DIR,
     NORMALIZED_DIR,
     PROCESSED_DIR,
@@ -68,6 +70,7 @@ from utils.datasets import (  # noqa: F401  (re-exported for convenience)
     VODAFONE_VALUE_COLS,
 )
 from utils.steps.standardize_raw_data import ENERGY_MONTHS
+from utils.window import Window, clip
 from utils.adapters.presenze import MONTHS_MAPPING
 from utils.disaggregation import (
     assert_sums_match,
@@ -93,9 +96,10 @@ BEDS_ALB_COL = "posti_letto_alb"
 BEDS_XALB_COL = "posti_letto_xalb"
 
 
-def _filtering_strutture(df, min_year, year_col="DATA"):
-    """Excludes years pre-2020, geography changes for municipalities aggregations"""
-    return df[df[year_col] > min_year].copy()
+def _filtering_strutture(df, window, year_col="DATA"):
+    """Keeps the years of the time window (nothing before `period.start`: geography changes of the
+    municipalities make the older years not comparable)."""
+    return clip(df, window, col=year_col, name="strutture")
 
 
 def _filtering_vodafone_attendences(df):
@@ -105,7 +109,8 @@ def _filtering_vodafone_attendences(df):
     ].copy()
 
 
-def process_popolazione(df, mapping_comuni):
+def process_popolazione(df, mapping_comuni, window=BASE_WINDOW):
+    df = clip(df, window, name="popolazione")
     df["ID_COMUNE"] = df["LOCATION"].apply(
         lambda x: resolve_id_comune(x, mapping_comuni)
     )
@@ -114,8 +119,8 @@ def process_popolazione(df, mapping_comuni):
     return standard_ordering_cols(df[["DATA", "ID_COMUNE"] + POPOLAZIONE_VALUE_COLS])
 
 
-def process_strutture(df, mapping_comuni):
-    df = _filtering_strutture(df, 2019)
+def process_strutture(df, mapping_comuni, window=BASE_WINDOW):
+    df = _filtering_strutture(df, window)
     df = remove_provincia(df, comune_col="LOCATION")
 
     # CONV = alberghieri + extralberghieri (from the raw components, not from the raw CONV totals)
@@ -151,7 +156,12 @@ def process_strutture(df, mapping_comuni):
 
 
 def process_vodafone(
-    df, mapping_vodafone, strutture=None, bed_col="tot_postiletto", check=True
+    df,
+    mapping_vodafone,
+    strutture=None,
+    bed_col="tot_postiletto",
+    check=True,
+    window=BASE_WINDOW,
 ):
     """vodafone presences: vodafone areas x day -> comune x day.
 
@@ -180,6 +190,7 @@ def process_vodafone(
     df["DATA"] = pd.to_datetime(df["DATA"].astype(str), errors="coerce").dt.strftime(
         "%Y-%m-%d"
     )
+    df = clip(df, window, name="vodafone")  # before the (expensive) split over the comuni
     df["ID_COMUNE"] = pad_id_comune(df["ID_COMUNE"]).apply(
         normalize_id_comune
     )  # hashable
@@ -285,7 +296,7 @@ def covisits_profile_weights(
     return res["weights"]
 
 
-def process_covisits(df, area_comune, weights=None):
+def process_covisits(df, area_comune, weights=None, window=BASE_WINDOW):
     """Vodafone OD co-visits: area x area x day -> comune x YEAR flow indicators.
 
     Wide output, one row per comune and year: DATA (year), ID_COMUNE (zero-padded) and
@@ -293,6 +304,7 @@ def process_covisits(df, area_comune, weights=None):
     combined) + `giorni_coperti`. `weights` ({userProfile: w}, default COVISITS_FIXED_WEIGHTS) merge the two
     profiles in the `_combined` columns. A year with fewer than COVISITS_FULL_YEAR_DAYS days is partial: it
     is kept, flagged by `giorni_coperti` and by a warning."""
+    df = clip(df, window, name="covisits")  # only the days of the window enter the yearly indicators
     out = comune_flow_indicators(
         df,
         area_comune,
@@ -312,10 +324,11 @@ def process_covisits(df, area_comune, weights=None):
     return standard_ordering_cols(out[["DATA", "ID_COMUNE"] + COVISITS_VALUE_COLS])
 
 
-def process_beds(strutture_std, mapping_comuni):
+def process_beds(strutture_std, mapping_comuni, window=BASE_WINDOW):
     """Beds per comune and year from the NORMALIZED strutture: DATA (year), ID_COMUNE, posti_letto_alb
-    (`alberghieri posti_letto`), posti_letto_xalb (`extra alb. Posti_letto`)."""
-    df = _filtering_strutture(strutture_std, 2019)
+    (`alberghieri posti_letto`), posti_letto_xalb (`extra alb. Posti_letto`). The years up to the end of
+    `window` are kept (the update needs the previous years too, hence only the end matters beyond start)."""
+    df = _filtering_strutture(strutture_std, window)
     df = remove_provincia(df, comune_col="LOCATION")
     df["ID_COMUNE"] = df["LOCATION"].apply(
         lambda x: resolve_id_comune(x, mapping_comuni)
@@ -391,8 +404,10 @@ def energy_monthly_by_category(df, mapping_comuni, source):
     return m.dropna(subset=["y"])[["ID_COMUNE", "month", "code", "y"]].reset_index(drop=True)
 
 
-def process_energy(df, mapping_comuni, value_col, source):
-    """Sum energy categories, then spread each municipality-month total evenly over its days."""
+def process_energy(df, mapping_comuni, value_col, source, window=BASE_WINDOW):
+    """Sum energy categories, then spread each municipality-month total evenly over its days.
+    Only the days of the time window are kept."""
+    df = clip(df, window, name=source)  # years (DATA = anno) first: cheap
     monthly = _energy_monthly(df, mapping_comuni, value_col, source)
     daily = monthly.loc[monthly.index.repeat(monthly["DATA"].dt.days_in_month)].copy()
     if not daily.empty:
@@ -400,7 +415,7 @@ def process_energy(df, mapping_comuni, value_col, source):
         day_offsets = daily.groupby(level=0).cumcount()
         daily["DATA"] = daily["DATA"] + pd.to_timedelta(day_offsets, unit="D")
         daily[value_col] = daily[value_col] / days_in_month
-    out = daily.reset_index(drop=True)
+    out = clip(daily.reset_index(drop=True), window, name=source)  # exact days
     # Keep dates as ISO strings in parquet as well: timestamp columns are exposed by
     # some downstream readers as epoch-millisecond integers.
     out["DATA"] = out["DATA"].dt.strftime("%Y-%m-%d")
@@ -495,6 +510,7 @@ def process_presenze_stay(
     bed_col,
     out_col,
     spill_over=PRESENZE_SPILL_OVER,
+    window=BASE_WINDOW,
 ):
     """ISPAT arrivals + presences (month x area) of `years` -> comune x day presences (see stay_distribution.py).
 
@@ -544,7 +560,7 @@ def process_presenze_stay(
         keep_from=pd.Timestamp(years[0], 1, 1),
         spill_over=spill_over,
     )
-    return standard_ordering_cols(out)
+    return standard_ordering_cols(clip(out, window, name=out_col))
 
 
 def presenze_alb_area_ids(mapping_apt):
@@ -566,8 +582,13 @@ def process_data(
     out_dir=PROCESSED_DIR,
     type_format=TYPE_FORMAT,
     raw_dir=RAW_DIR,
+    window=BASE_WINDOW,
 ):
+    """Base build: every dataset is restricted to `window` (default: period.start .. period.base_end of
+    settings.yaml), so nothing before 2022-01-01 and nothing after 2024-12-31 reaches the processed data
+    (nor the estimation of the covisits profile weights)."""
     normalized_dir = Path(normalized_dir)
+    logger.info("Time window of the base build: %s", window)
 
     logger.info("Reading standardized data from %s", normalized_dir)
     std = {
@@ -575,6 +596,8 @@ def process_data(
         for name, spec in DATASETS.items()
         if spec.normalized
     }
+    for name in ("ee_prelievi", "gas_prelievi", "vodafone_covisits"):  # big / used by the weights
+        std[name] = clip(std[name], window, name=name)
     maps = load_mappings(mapping_dir)
     mapping_comuni, mapping_vodafone, mapping_apt = (
         maps["mapping_comuni"],
@@ -585,32 +608,39 @@ def process_data(
     # Order: strutture -> vodafone (areas with several comuni split by beds) -> alb -> extralb.
     # alb / extralb (ISPAT arrivals + presences, read from raw_data) are distributed taking the average
     # stay into account, and split among comuni by `alberghieri` / `extra alb.` beds.
-    strutture_pr = process_strutture(std["strutture"], mapping_comuni)
-    vodafone_pr = process_vodafone(std["vodafone"], mapping_vodafone, strutture_pr)
-    beds = process_beds(read_strutture_std(normalized_dir, type_format), mapping_comuni)
+    strutture_pr = process_strutture(std["strutture"], mapping_comuni, window)
+    vodafone_pr = process_vodafone(
+        std["vodafone"], mapping_vodafone, strutture_pr, window=window
+    )
+    beds = process_beds(
+        read_strutture_std(normalized_dir, type_format), mapping_comuni, window
+    )
+    years = range(window.start.year, window.end.year + 1)
     alb_pr = process_presenze_stay(
-        presenze_files(raw_dir, PRESENZE_TAGS["presenze_alb"], PRESENZE_BASE_YEARS),
+        presenze_files(raw_dir, PRESENZE_TAGS["presenze_alb"], years),
         "alb",
-        PRESENZE_BASE_YEARS,
+        years,
         presenze_alb_area_ids(mapping_apt),
         beds,
         bed_col=BEDS_ALB_COL,
         out_col=PRESENZE_ALB_VALUE_COLS[0],
+        window=window,
     )
     extralb_pr = process_presenze_stay(
-        presenze_files(raw_dir, PRESENZE_TAGS["presenze_extralb"], PRESENZE_BASE_YEARS),
+        presenze_files(raw_dir, PRESENZE_TAGS["presenze_extralb"], years),
         "exalb",
-        PRESENZE_BASE_YEARS,
+        years,
         presenze_exalb_area_ids(mapping_comuni),
         beds,
         bed_col=BEDS_XALB_COL,
         out_col=PRESENZE_XALB_VALUE_COLS[0],
+        window=window,
     )
     ee_pr = process_energy(
-        std["ee_prelievi"], mapping_comuni, EE_PRELIEVI_VALUE_COLS[0], "ee_prelievi"
+        std["ee_prelievi"], mapping_comuni, EE_PRELIEVI_VALUE_COLS[0], "ee_prelievi", window
     )
     gas_pr = process_energy(
-        std["gas_prelievi"], mapping_comuni, GAS_PRELIEVI_VALUE_COLS[0], "gas_prelievi"
+        std["gas_prelievi"], mapping_comuni, GAS_PRELIEVI_VALUE_COLS[0], "gas_prelievi", window
     )
     area_comune = covisits_area_comune(mapping_dir, mapping_vodafone, mapping_comuni)
     covisits_weights = covisits_profile_weights(
@@ -623,9 +653,11 @@ def process_data(
         strutture_pr,
         out_dir,
     )
-    covisits_pr = process_covisits(std["vodafone_covisits"], area_comune, covisits_weights)
+    covisits_pr = process_covisits(
+        std["vodafone_covisits"], area_comune, covisits_weights, window
+    )
     dict_processed = {
-        "popolazione_pr": process_popolazione(std["popolazione"], mapping_comuni),
+        "popolazione_pr": process_popolazione(std["popolazione"], mapping_comuni, window),
         "strutture_pr": strutture_pr,
         "vodafone_pr": vodafone_pr,
         "presenze_alb_pr": alb_pr,

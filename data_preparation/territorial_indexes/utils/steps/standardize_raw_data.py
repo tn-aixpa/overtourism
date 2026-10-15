@@ -14,6 +14,7 @@ kept whole in memory, so it is read in chunks and only the rows used by the flow
 (area level, TOURIST / VISITOR, total over the countries).
 """
 
+import io
 import logging
 from pathlib import Path
 
@@ -124,13 +125,44 @@ def standardize_vodafone_columns(
     return standard_ordering_cols(df)
 
 
+def read_base_vodafone(raw_dir, type_format=TYPE_FORMAT) -> pd.DataFrame:
+    """Vodafone presences of the base build: `vodafone_attendences` (2022-01-01 .. 2024-03-31) completed with
+    `vodafone_attendences_new.csv` (2023-01-01 .. 2025-12-31), which covers the rest of the base window
+    (2024-04-01 .. 2024-12-31). On the dates present in both files the NEWER file wins. The time window
+    (up to 2024-12-31) is applied in step 2: the 2025 days of the newer file are left to the update."""
+    raw_dir = Path(raw_dir)
+    old = read_df(raw_dir, "vodafone_attendences", type_format)
+    new_path = raw_dir / VODAFONE_NEW_FILE
+    if not new_path.exists():
+        logger.warning(
+            "[vodafone] %s not found in %s: the presences end with %s",
+            VODAFONE_NEW_FILE,
+            raw_dir,
+            old["date"].max(),
+        )
+        return old
+    new = pd.read_csv(new_path)
+    replaced = old["date"].astype(str).isin(set(new["date"].astype(str)))
+    logger.info(
+        "[vodafone] %d rows of vodafone_attendences replaced by %s (%s .. %s)",
+        int(replaced.sum()),
+        VODAFONE_NEW_FILE,
+        new["date"].min(),
+        new["date"].max(),
+    )
+    return pd.concat([old[~replaced], new], ignore_index=True)
+
+
 def read_energy_category(path) -> pd.DataFrame:
-    """Read a semicolon-delimited energy category file and repair the header variant in 96.csv."""
-    path = Path(path)
+    """Read a semicolon-delimited energy category file (a path or a bytes buffer) and repair the header
+    variant in 96.csv."""
+    path = path if isinstance(path, (str, Path)) else io.StringIO(path.read().decode("utf-8-sig"))
     headers = [
         str(column).strip().lstrip("\ufeff")
         for column in pd.read_csv(path, sep=";", nrows=0).columns
     ]
+    if hasattr(path, "seek"):
+        path.seek(0)
     if "codice_utilizzo" not in headers:
         # The 96.csv source rows contain the usage code, but its header omits that field.
         headers.insert(2, "codice_utilizzo")
@@ -180,6 +212,7 @@ COVISITS_COLS = [
     "value",
 ]
 COVISITS_CHUNK_ROWS = 1_000_000
+VODAFONE_NEW_FILE = "vodafone_attendences_new.csv"
 
 
 def standardize_covisits_columns(df) -> pd.DataFrame:
@@ -236,7 +269,7 @@ def standardize_raw_data(
     logger.info("Reading raw data from %s", raw_dir)
     popolazione_df = read_df(raw_dir, "popolazione_2020_2024", type_format)
     strutture_df = read_base_strutture(raw_dir)
-    vodafone_df = read_df(raw_dir, "vodafone_attendences", type_format)
+    vodafone_df = read_base_vodafone(raw_dir, type_format)
     geojson = read_geojson(mapping_dir / Path(REFERENCES["geojson"]).name)
     covisits_df = read_covisits_raw(raw_dir / COVISITS_RAW_FILE)
 

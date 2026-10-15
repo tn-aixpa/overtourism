@@ -2,7 +2,7 @@
 
 Reference datasets for the Molveno model. Same structure as the Fazzon pipeline
 (`../fazzon/README.md`), reusing `model/common/` (sources, weather readers), the main pipeline's
-`utils` and `config/settings.yaml`. Run from the `data_preparation` folder:
+`model/common/config.py`, `model/common/io.py` and `model/config/settings.yaml` (directories, platform). Run from the `data_preparation` folder:
 
 ```bash
 python -m model.molveno.prepare                  # steps 0-2
@@ -18,7 +18,7 @@ python -m model.molveno.estimator_comparison     # validation of the presence es
 | 0 Sources | `model/common/sources.py` | data lake or `local_source_dir` (`molveno.yaml`) | raw files |
 | 1 Standardize | `standardize.py` | raw files | `Output/data/normalized/molveno/*.parquet` |
 | 2 Reference datasets | `reference_datasets.py`, `presence_estimators.py` | normalized tables | `Output/data/final_data/molveno/*.parquet` |
-| 3 Upload | `utils.remote.log_dataframe` | reference datasets | platform dataitems (`--upload`) |
+| 3 Upload | `model.common.remote.log_dataframe` | reference datasets | platform dataitems (`--upload`) |
 
 * **Sources** (`molveno.yaml`): Vodafone presences (`vodafone_attendences_new.csv`) and the
   aggregated foreign presences (`vodafone_attendences_STR_new.csv`); the measured weather of

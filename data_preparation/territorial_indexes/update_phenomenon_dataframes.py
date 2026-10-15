@@ -17,7 +17,7 @@ A new year with a new layout = a new adapter in utils/adapters/ + a new update y
 The final data of the base build (`paths.final` in settings.yaml) must exist, in the same `type_format`.
 
 Usage:
-    python -m update_phenomenon_dataframes --config data_preparation/config/updates/update_2025.yaml
+    python -m update_phenomenon_dataframes --config config/updates/update_2025.yaml
     python -m update_phenomenon_dataframes --config ... --skip-download   # raw_data already there
     python -m update_phenomenon_dataframes --config ... --upload          # also log final data to the platform
 
@@ -63,7 +63,10 @@ def update_pipeline(
     process_update_std_data(config, type_format=type_format)
     logger.info("Step 3/3: compute final phenomena (append to the existing ones)")
     dict_dfs = compute_phenomena(
-        type_format=type_format, local=local, datasets=config.datasets
+        type_format=type_format,
+        local=local,
+        datasets=config.datasets,
+        window=config.window,
     )
     logger.info("Update finished!")
     return dict_dfs

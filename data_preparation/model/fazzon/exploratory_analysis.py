@@ -64,7 +64,7 @@ e i grafici PNG numerati, con etichette in italiano.
 import sys
 from pathlib import Path
 
-if __package__ in (None, ""):  # eseguito come file: rende importabili model.* e utils.*
+if __package__ in (None, ""):  # eseguito come file: rende importabile model.*
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import matplotlib.pyplot as plt

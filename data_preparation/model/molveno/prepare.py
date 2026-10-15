@@ -14,7 +14,7 @@ Run from the data_preparation folder (as the other entry points).
 | 0 Sources | model/common/sources.py | raw files (local copies or <raw>/molveno/) |
 | 1 Standardize | standardize.py | <normalized>/molveno/*.parquet |
 | 2 Reference datasets | reference_datasets.py | <final>/molveno/*.parquet |
-| 3 Upload (optional) | utils.remote.log_dataframe | platform dataitems |
+| 3 Upload (optional) | model.common.remote.log_dataframe | platform dataitems |
 """
 
 import argparse
@@ -26,8 +26,8 @@ from model.common.sources import resolve_sources
 from model.molveno.config import MOLVENO_FINAL_DIR, MOLVENO_NORMALIZED_DIR, MOLVENO_RAW_DIR, load_config
 from model.molveno.reference_datasets import build_all
 from model.molveno.standardize import standardize_all
-from utils.config import setup_logging
-from utils.io import save_computed_dfs
+from model.common.config import setup_logging
+from model.common.io import save_computed_dfs
 
 logger = logging.getLogger(__name__)
 

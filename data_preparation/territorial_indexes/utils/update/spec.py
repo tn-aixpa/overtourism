@@ -30,12 +30,16 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pandas as pd
+
 from utils.adapters import (
     KIND_DATASETS,
     check_adapter_params,
     get_adapter,
 )
+from utils.config import DATA_START, UPDATE_WINDOW
 from utils.datasets import ALL_DATASETS
+from utils.window import Window
 from utils.update.sources import READERS
 
 logger = logging.getLogger(__name__)
@@ -65,6 +69,17 @@ class SourceSpec:
 @dataclass(frozen=True)
 class UpdateConfig:
     sources: dict  # dataset name -> list[SourceSpec]
+    # period of the update (optional `period: {start, end}` in the yaml); None = `period.update_*` of settings.yaml
+    period: tuple | None = None
+
+    @property
+    def window(self) -> Window:
+        """Time window of the update: only the data inside it are processed and appended (never before
+        the global `period.start`)."""
+        if self.period is None:
+            return UPDATE_WINDOW
+        start, end = (pd.Timestamp(str(x)) for x in self.period)
+        return Window(max(start, DATA_START), end)
 
     @property
     def datasets(self) -> list:
@@ -143,7 +158,18 @@ def parse_config(raw: dict) -> UpdateConfig:
         raise ConfigError(
             "Shared references belong in config/settings.yaml, not the update config"
         )
-    return UpdateConfig(sources=sources)
+    period = None
+    if raw.get("period") is not None:
+        p = raw["period"]
+        if not isinstance(p, dict) or set(p) != {"start", "end"}:
+            raise ConfigError("`period` must be a mapping with `start` and `end`")
+        try:
+            period = (pd.Timestamp(str(p["start"])), pd.Timestamp(str(p["end"])))
+        except ValueError as e:
+            raise ConfigError(f"`period`: {e}") from None
+        if period[0] > period[1]:
+            raise ConfigError("`period`: start is after end")
+    return UpdateConfig(sources=sources, period=period)
 
 
 def validate_config(config: UpdateConfig) -> UpdateConfig:

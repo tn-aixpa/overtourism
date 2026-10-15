@@ -4,7 +4,7 @@
 from pathlib import Path
 
 from model.common.sources import SourcesConfig, load_sources_config
-from utils.config import FINAL_DIR, NORMALIZED_DIR, RAW_DIR
+from model.common.config import FINAL_DIR, NORMALIZED_DIR, RAW_DIR
 
 FAZZON_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = FAZZON_DIR / "fazzon.yaml"

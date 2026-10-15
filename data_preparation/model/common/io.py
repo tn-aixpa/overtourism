@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Local read/write of dataframes and JSON. No network / platform dependency at import time."""
+"""Local write of dataframes for the model pipelines (optionally logged to the platform).
+No network / platform dependency at import time."""
 
-import json
 import logging
 from pathlib import Path
 
 import pandas as pd
 
-from utils.cleaning import normalize_id_comune
-from utils.config import TYPE_FORMATS
+from model.common.config import TYPE_FORMATS
 
 logger = logging.getLogger(__name__)
 
@@ -18,28 +17,6 @@ def ensure_dir(path) -> Path:
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
     return path
-
-
-def read_df(path, name, type_format="csv", parse_ids=False):
-    """Reads path/name in type_format format. With parse_ids=True, ID_COMUNE is
-    brought back to its canonical form (lists are serialized as strings in csv)."""
-    file = Path(path) / f"{name}.{type_format}"
-    if not file.exists():
-        raise FileNotFoundError(
-            f"{file} not found: run the previous step (download raw data)"
-        )
-    if type_format == "csv":
-        df = pd.read_csv(file, dtype={"ID_COMUNE": str})
-    else:
-        df = pd.read_parquet(file)
-    if parse_ids and "ID_COMUNE" in df.columns:
-        df["ID_COMUNE"] = df["ID_COMUNE"].apply(normalize_id_comune)
-    return df
-
-
-def read_json(path):
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
 
 
 def put_dataframe(df: pd.DataFrame, name: str, path, type: str = "parquet") -> str:
@@ -79,7 +56,7 @@ def save_computed_dfs(dict_dfs, local=False, type_format="parquet", path_saving=
         )
         file_path = put_dataframe(value, key, path=path_saving, type=type_format)
         if not local:
-            from utils.remote import log_dataframe
+            from model.common.remote import log_dataframe
 
             logger.info(
                 "Logging dataframe '%s.%s' to the platform...", key, type_format

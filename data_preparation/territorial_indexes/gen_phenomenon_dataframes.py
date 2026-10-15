@@ -12,9 +12,9 @@ Every step reads the output of the previous one. Directories, file format (`type
 default) and platform settings are in config/settings.yaml.
 
 Usage:
-    python -m gen_base_phenomenon_dataframes                  # all steps
-    python -m gen_base_phenomenon_dataframes --skip-download  # raw_data already there
-    python -m gen_base_phenomenon_dataframes --upload         # also log final data to the platform
+    python -m gen_phenomenon_dataframes                  # all steps
+    python -m gen_phenomenon_dataframes --skip-download  # raw_data already there
+    python -m gen_phenomenon_dataframes --upload         # also log final data to the platform
 
 Each step can also be run on its own, see utils/steps/.
 """

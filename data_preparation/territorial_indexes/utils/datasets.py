@@ -8,7 +8,7 @@ is defined here once.
 
 from dataclasses import dataclass
 
-from utils.config import DATASET_FILES, PHENOMENA_FILES
+from utils.config import BASE_WINDOW, DATASET_FILES, PHENOMENA_FILES
 
 # value columns of the processed dataframes
 POPOLAZIONE_VALUE_COLS = ["popolazione"]
@@ -72,9 +72,9 @@ COVISITS_VALUE_COLS = [
 ] + ["giorni_coperti"]
 
 # ISPAT presences (alb / extralb): arrivals + presences per month, read from the raw files (no normalization).
-# Files: Presenze/<arrivi|presenze>_<alb|exalb>_<year>.csv ; the base build downloads these years, the updates the others.
+# Files: Presenze/<arrivi|presenze>_<alb|exalb>_<year>.csv ; the base build downloads the years of its window (period.start .. period.base_end), the updates the others.
 PRESENZE_FOLDER = "Presenze"
-PRESENZE_BASE_YEARS = (2022, 2023)
+PRESENZE_BASE_YEARS = tuple(range(BASE_WINDOW.start.year, BASE_WINDOW.end.year + 1))  # 2022..2024
 PRESENZE_MEASURES = ("arrivi", "presenze")
 # True: a stay that starts at the end of a month goes on in the next one (uses the previous month's arrivals and stay);
 # False: every month is distributed using only its own arrivals and stay

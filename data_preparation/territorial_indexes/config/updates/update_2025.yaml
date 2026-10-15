@@ -1,0 +1,84 @@
+# Settings of the data-preparation update pipeline.
+# Edit this file as needed or use it as template for new updates
+# This update covers 2025 ONLY: the base build (gen_phenomenon_dataframes.py) goes from 2022-01-01 to 2024-12-31.
+# Every dataset below is restricted to the period of the update (`period.update_*` of settings.yaml, or the optional
+# `period: {start: ..., end: ...}` here, never before `period.start`): rows of other periods in the files are ignored.
+# ALL the phenomena are updated: presenze (vodafone + alb + extralb), popolazione, strutture, consumption (ee + gas)
+# and flussi OD. See ASSUMPTIONS.md (U1..U6) for the assumptions about the files of the update.
+
+datasets:
+  popolazione:
+    enabled: true
+    sources:
+      - file: popolazione_2026_ISPAT.csv
+        reader: csv
+        adapter: popolazione_ispat_1jan
+        adapter_kwargs: {year: 2025}        # uses column "Popolazione residente al 1.1.2025"
+
+  strutture:
+    enabled: true
+    sources:
+      - file: numero_strutture_ISPAT_2025.xlsx
+        reader: excel
+        reader_kwargs: {header: [0, 1]}
+        adapter: strutture_annuario
+        adapter_kwargs: {year: 2025}
+        label: "2025"
+
+  vodafone:
+    enabled: true
+    sources:
+      - file: vodafone_attendences_new.csv
+        reader: csv
+        adapter: vodafone_raw             # 2023-01-01 .. 2025-12-31: only 2025 is used here (the base build reads it for 2024-04-01 .. 2024-12-31)
+
+  presenze_alb:
+    enabled: true
+    sources:                                  # arrivals + presences of 2025, used as downloaded (no normalization); the 2024 files of the base build
+                                              # (same raw_data folder) give the stays that cross the new year
+      - file: Presenze/presenze_alb_2025.csv
+        reader: csv
+        adapter: ispat_presenze_raw
+        adapter_kwargs: {year: 2025, measure: presenze}
+      - file: Presenze/arrivi_alb_2025.csv
+        reader: csv
+        adapter: ispat_presenze_raw
+        adapter_kwargs: {year: 2025, measure: arrivi}
+
+  presenze_extralb:
+    enabled: true
+    sources:                                  # arrivals + presences of 2025, used as downloaded (no normalization); the 2024 files of the base build
+                                              # (same raw_data folder) give the stays that cross the new year
+      - file: Presenze/arrivi_exalb_2025.csv
+        reader: csv
+        adapter: ispat_presenze_raw
+        adapter_kwargs: {year: 2025, measure: arrivi}
+      - file: Presenze/presenze_exalb_2025.csv
+        reader: csv
+        adapter: ispat_presenze_raw
+        adapter_kwargs: {year: 2025, measure: presenze}
+
+  ee_prelievi:
+    enabled: false
+    sources:               # category files (ATECO 49.3, 55.1, 56.1, 93.1, 96), read as in the base build
+      - {file: Energia/ee_prelievi/49_3.csv, reader: energy_csv, adapter: energia_categorie}
+      - {file: Energia/ee_prelievi/55_1.csv, reader: energy_csv, adapter: energia_categorie}
+      - {file: Energia/ee_prelievi/56_1.csv, reader: energy_csv, adapter: energia_categorie}
+      - {file: Energia/ee_prelievi/93_1.csv, reader: energy_csv, adapter: energia_categorie}
+      - {file: Energia/ee_prelievi/96.csv, reader: energy_csv, adapter: energia_categorie}
+
+  gas_prelievi:
+    enabled: false
+    sources:
+      - {file: Energia/gas_prelievi/49_3.csv, reader: energy_csv, adapter: energia_categorie}
+      - {file: Energia/gas_prelievi/55_1.csv, reader: energy_csv, adapter: energia_categorie}
+      - {file: Energia/gas_prelievi/56_1.csv, reader: energy_csv, adapter: energia_categorie}
+      - {file: Energia/gas_prelievi/93_1.csv, reader: energy_csv, adapter: energia_categorie}
+      - {file: Energia/gas_prelievi/96.csv, reader: energy_csv, adapter: energia_categorie}
+
+  vodafone_covisits:
+    enabled: true
+    sources:                                  # OD co-visits: yearly flow indicators of 2025 (see ASSUMPTIONS.md U4)
+      - file: vodafone_covisits.csv
+        reader: covisits_csv                  # chunked, keeps only the rows of the update period
+        adapter: vodafone_covisits_raw

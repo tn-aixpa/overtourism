@@ -1,5 +1,5 @@
 # Fazzon data-preparation pipeline: source files.
-# Directories and platform settings come from data_preparation/config/settings.yaml
+# Directories and platform settings come from model/config/settings.yaml
 # (outputs go to <raw|normalized|final>/fazzon/).
 
 # Read the sources from this local folder instead of the data lake (null = data lake).

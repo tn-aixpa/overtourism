@@ -1,0 +1,19 @@
+# Settings shared by the model pipelines (model/<name>/): directories and platform.
+# The same Output folder is used by territorial_indexes (see territorial_indexes/config/settings.yaml):
+# keep `output_dir` and `paths` aligned in the two files.
+
+# Root of everything the pipelines write. A relative path is resolved from the `model` folder.
+output_dir: ../Output
+
+# Sub-directories, relative to output_dir (absolute paths are accepted too).
+paths:
+  raw: data/raw_data                    # each model uses its own sub-folder, e.g. raw_data/molveno
+  normalized: data/normalized
+  final: data/final_data
+
+# Data lake / platform
+platform:
+  project: overtourism
+  s3_bucket: most-datalake
+  s3_prefix: overtourism/inputdata/
+  dhcore_env: aixpa                     # section of ~/.dhcore.ini holding the S3 credentials

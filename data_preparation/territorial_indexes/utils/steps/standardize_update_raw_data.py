@@ -45,18 +45,14 @@ from utils.update.spec import config_from_argv, load_config
 
 logger = logging.getLogger(__name__)
 
-def _not_defined(kind):
-    raise NotImplementedError(f"The update of the '{kind}' data is not defined yet")
-
-
 # kind -> standardization (same functions of the base build)
 STANDARDIZERS = {
     "popolazione": lambda df, geojson: standardize_popolazione_columns(df),
     "strutture": lambda df, geojson: standardize_strutture_columns(df),
     "vodafone": lambda df, geojson: standardize_vodafone_columns(df, geojson),
     "vodafone_covisits": lambda df, geojson: standardize_covisits_columns(df),
-    # PLACEHOLDER: the update format of the energy data is not known yet (see adapters/energia.py)
-    "energia": lambda df, geojson: _not_defined("energia"),
+    # energy: the reader (energy_csv) already gives the standard layout of the base normalized files
+    "energia": lambda df, geojson: df,
 }
 # kinds used as downloaded (no normalization): ISPAT arrivals / presences
 RAW_KINDS = {"presenze_raw"}

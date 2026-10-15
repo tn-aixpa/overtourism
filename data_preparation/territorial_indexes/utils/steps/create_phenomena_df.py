@@ -24,6 +24,8 @@ from pathlib import Path
 
 from utils.cleaning import concat_keep_last
 from utils.config import (
+    BASE_WINDOW,
+    DATA_START,
     FINAL_DIR,
     PROCESSED_DIR,
     TYPE_FORMAT,
@@ -31,6 +33,7 @@ from utils.config import (
 )
 from utils.datasets import DATASETS, PHENOMENA, phenomena_to_recompute
 from utils.io import ensure_dir, read_df, save_computed_dfs
+from utils.window import Window, clip
 
 logger = logging.getLogger(__name__)
 
@@ -139,16 +142,25 @@ def compute_phenomena(
     type_format=TYPE_FORMAT,
     local=True,
     datasets=None,
+    window=None,
 ):
     """Reads the processed dataframes, computes the phenomena and saves them.
 
     datasets=None: base build, every `<dataset>_pr` -> phenomena CREATED in out_dir.
     datasets=[...]: update, the `<dataset>_update_pr` of those datasets -> phenomena APPENDED to the
     existing files of out_dir (update wins on a duplicated DATA + ID_COMUNE).
-    local=False also uploads the phenomena to the platform."""
+    local=False also uploads the phenomena to the platform.
+
+    window: base build = [period.start, period.base_end] (default); update = the period of the update.
+    Whatever the processed files contain, the final phenomena never hold data before `period.start` or after
+    the end of the window: in the update the existing phenomena are clipped too (earlier rows stay as they are,
+    unless they are older than `period.start`)."""
     processed_dir, out_dir = Path(processed_dir), ensure_dir(out_dir)
     update = datasets is not None
     datasets = list(datasets) if update else list(DATASETS)
+    window = window or BASE_WINDOW
+    keep = Window(DATA_START, window.end)  # what the final files may contain
+    logger.info("Time window of the %s: %s", "update" if update else "base build", window)
 
     logger.info(
         "Reading %s processed data from %s",
@@ -180,7 +192,7 @@ def compute_phenomena(
     dict_dfs = {}
     for phen in to_build:
         logger.info("## Computing %s", phen)
-        df = BUILDERS[phen](pr)
+        df = clip(BUILDERS[phen](pr), window, name=phen)
         if update:
             try:
                 existing = read_df(out_dir, phen, type_format)
@@ -190,7 +202,7 @@ def compute_phenomena(
                     "final data of the base build, run the base build first"
                 ) from None
             df = append_to_existing(existing, df, phen)
-        dict_dfs[phen] = df
+        dict_dfs[phen] = clip(df, keep, name=phen)
 
     save_computed_dfs(
         dict_dfs, local=local, type_format=type_format, path_saving=out_dir
