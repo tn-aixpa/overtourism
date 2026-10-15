@@ -87,12 +87,12 @@ class FazzonBackend:
         self._model = model
         self._index_map: dict[str, Any] = {idx.name: idx for idx in model.indexes}
         self._parameter_axes = [
-            model.inputs.pv_visitors_car,
             model.inputs.pv_visitors_total,
+            model.inputs.pv_visitors_car,
         ]
         # Grid-resolution: structural axis choices, not per-evaluation config.
         # Non-car arrivals reach ~1600/day under a strong price policy (modal shift, D15).
-        self._c_max, self._o_max = 2000, 3000
+        self._c_max, self._o_max = 3000, 3000
         self._c_sample, self._o_sample = 100, 100
         self._config = OvertourismEvaluationConfig(
             ensemble_size=12,  # 4 seasons x 3 weather classes (D5, D7)
