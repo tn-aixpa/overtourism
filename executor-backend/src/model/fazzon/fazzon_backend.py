@@ -206,11 +206,28 @@ class FazzonBackend:
                     "attiva), sale a piedi o va altrove."
                 ),
                 unit="€",
-                category="Mobilità",
+                category="Parcheggio",
                 default=float(PRICE_LEVELS[0]),
                 min_value=float(PRICE_LEVELS[0]),
                 max_value=float(PRICE_LEVELS[-1]),
                 step=float(PRICE_LEVELS[1] - PRICE_LEVELS[0]),
+            ),
+            inp.i_c_parking.name: OvertourismParameterMeta(
+                name=inp.i_c_parking.name,
+                kind="distribution",
+                label="Cap parcheggio (auto simultanee)",
+                description=(
+                    "Range [min, max] del numero massimo di auto in parcheggio simultaneo. "
+                    "Riferimento 2025: triangolare moda 200, range [150, 250]."
+                ),
+                unit="auto",
+                category="Parcheggio",
+                default_range=(150.0, 250.0),
+                min_value=50.0,
+                max_value=500.0,
+                step=10.0,
+                distribution_family="triang",
+                distribution_fixed_params={"c": 0.5},
             ),
             inp.i_shuttle_buses.name: OvertourismParameterMeta(
                 name=inp.i_shuttle_buses.name,
@@ -321,23 +338,6 @@ class FazzonBackend:
                 category="Contesto",
                 support=list(inp.cv_weather.support),
                 support_labels=WEATHER_LABELS,
-            ),
-            inp.i_c_parking.name: OvertourismParameterMeta(
-                name=inp.i_c_parking.name,
-                kind="distribution",
-                label="Cap parcheggio (auto simultanee)",
-                description=(
-                    "Range [min, max] del numero massimo di auto in parcheggio simultaneo. "
-                    "Riferimento 2025: triangolare moda 200, range [150, 250]."
-                ),
-                unit="auto",
-                category="Capacità",
-                default_range=(150.0, 250.0),
-                min_value=50.0,
-                max_value=500.0,
-                step=10.0,
-                distribution_family="triang",
-                distribution_fixed_params={"c": 0.5},
             ),
         }
 
