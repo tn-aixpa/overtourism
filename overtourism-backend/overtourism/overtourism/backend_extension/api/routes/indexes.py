@@ -42,7 +42,7 @@ from overtourism.overtourism.backend_extension.api.utils.platform import (
 logger = logging.getLogger(__name__)
 
 indexes_router = APIRouter(
-    prefix=f"{BASE_ROUTE}/default/indexes",
+    prefix=f"{BASE_ROUTE}/indexes",
     tags=["Indexes"],
     dependencies=[Depends(get_auth_context)],
 )
