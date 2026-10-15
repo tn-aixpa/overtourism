@@ -48,7 +48,6 @@ from utils.steps.process_std_data import (
     presenze_exalb_area_ids,
     presenze_files,
     covisits_area_comune,
-    covisits_profile_weights,
     process_beds,
     process_covisits,
     process_energy,
@@ -103,7 +102,7 @@ PROCESS_ORDER = (
 
 
 def _process_covisits(
-    parts, normalized_dir, mapping_dir, maps, type_format, out_dir, window
+    parts, normalized_dir, mapping_dir, maps, type_format, window
 ):
     """Flow indicators of the update. They are yearly, so they are computed on ALL the days of each year:
     the standardized co-visits of the base build (if any) + every part of the update (later ones win on
@@ -124,9 +123,7 @@ def _process_covisits(
     area_comune = covisits_area_comune(
         mapping_dir, maps["mapping_vodafone"], maps["mapping_comuni"]
     )
-    # the weights of the base build are reused (not re-estimated): the years stay comparable
-    weights = covisits_profile_weights(od, area_comune, {}, None, out_dir, reuse=True)
-    out = process_covisits(od, area_comune, weights, window)
+    out = process_covisits(od, area_comune, window)
     # the indicators are yearly: only the years of the window (the base years stay as they are)
     return clip(out, window, name="vodafone_covisits")
 
@@ -227,7 +224,6 @@ def process_update_std_data(
                     mapping_dir,
                     maps,
                     type_format,
-                    out_dir,
                     window,
                 )
             continue

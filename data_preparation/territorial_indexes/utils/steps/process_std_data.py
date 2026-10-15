@@ -43,17 +43,11 @@ from utils.config import (
     setup_logging,
 )
 from utils.datasets import (  # noqa: F401  (re-exported for convenience)
-    COVISITS_FIXED_WEIGHTS,
     COVISITS_FULL_YEAR_DAYS,
-    COVISITS_WEIGHT_BOOTSTRAP,
-    COVISITS_WEIGHT_MIN,
-    COVISITS_WEIGHT_MODE,
-    COVISITS_WEIGHT_CATEGORIES,
-    COVISITS_WEIGHT_PLACEBO_MAX,
-    COVISITS_WEIGHTS_FILE,
     COVISITS_METRICS,
     COVISITS_MIN_T,
     COVISITS_PAGERANK_DAMPING,
+    COVISITS_PROFILE_WEIGHTS,
     COVISITS_PROFILES,
     COVISITS_VALUE_COLS,
     DATASETS,
@@ -81,14 +75,6 @@ from utils.disaggregation import (
 from utils.flows import build_area_comune, comune_flow_indicators
 from utils.stay_distribution import distribute_by_stay
 from utils.io import read_df, read_json, save_computed_dfs
-from utils.profile_weights import (
-    build_energy_targets,
-    estimate_profile_weights,
-    fixed_profile_weights,
-    load_profile_weights,
-    normalize_code,
-    save_profile_weights,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -245,64 +231,13 @@ def covisits_area_comune(mapping_dir, mapping_vodafone, mapping_comuni):
     return build_area_comune(geojson, mapping_vodafone, mapping_comuni)
 
 
-def covisits_profile_weights(
-    od, area_comune, energy, strutture, out_dir, *, reuse=False, mode=COVISITS_WEIGHT_MODE
-):
-    """Weights {userProfile: w} used to merge TOURIST and VISITOR in the `_combined` indicators.
-
-    mode "fixed": COVISITS_FIXED_WEIGHTS. mode "estimate": learnt from the consumption by usage category,
-    `energy` = {carrier: energy_monthly_by_category(...)} e.g. {"ee": ..., "gas": ...} (see profile_weights.py and
-    the categories in COVISITS_WEIGHT_CATEGORIES), and saved in out_dir/COVISITS_WEIGHTS_FILE.
-    reuse=True (yearly updates): the saved weights are loaded instead, so that the years of the base build
-    and of the updates stay comparable; without a saved file the fixed weights are used."""
-    file = Path(out_dir) / COVISITS_WEIGHTS_FILE
-    if mode == "fixed":
-        res = fixed_profile_weights(COVISITS_FIXED_WEIGHTS)
-    elif reuse:
-        res = load_profile_weights(file)
-        if res is None:
-            logger.warning(
-                "[covisits] %s not found (run the base build): fixed weights %s",
-                file, COVISITS_FIXED_WEIGHTS,
-            )
-            res = fixed_profile_weights(COVISITS_FIXED_WEIGHTS, reason="no saved weights")
-        else:
-            logger.info("[covisits] weights loaded from %s: %s", file, res["weights"])
-        return res["weights"]
-    else:
-        t = build_energy_targets(energy, COVISITS_WEIGHT_CATEGORIES)
-        for carrier, found in t["codes_found"].items():
-            absent = sorted(set(normalize_code(c) for c in COVISITS_WEIGHT_CATEGORIES) - set(found))
-            if absent:
-                logger.warning(
-                    "[covisits] %s: usage codes %s configured in COVISITS_WEIGHT_CATEGORIES but not in the data "
-                    "(codes in the data: %s)", carrier, absent, found,
-                )
-        res = estimate_profile_weights(
-            od,
-            area_comune,
-            t["targets"],
-            strutture,
-            profiles=list(COVISITS_PROFILES),
-            diagnostic_targets=t["diagnostic"],
-            placebo_targets=t["placebo"],
-            placebo_max=COVISITS_WEIGHT_PLACEBO_MAX,
-            n_boot=COVISITS_WEIGHT_BOOTSTRAP,
-            min_weight=COVISITS_WEIGHT_MIN,
-            fallback=COVISITS_FIXED_WEIGHTS,
-        )
-    save_profile_weights(res, file)
-    logger.info("[covisits] weights (%s): %s -> %s", res["source"], res["weights"], file)
-    return res["weights"]
-
-
-def process_covisits(df, area_comune, weights=None, window=BASE_WINDOW):
+def process_covisits(df, area_comune, window=BASE_WINDOW):
     """Vodafone OD co-visits: area x area x day -> comune x YEAR flow indicators.
 
     Wide output, one row per comune and year: DATA (year), ID_COMUNE (zero-padded) and
     `<metric>_<profile>` (quota_ingresso, quota_uscita, quota_intra_ambito, pagerank; tourist, visitor and
-    combined) + `giorni_coperti`. `weights` ({userProfile: w}, default COVISITS_FIXED_WEIGHTS) merge the two
-    profiles in the `_combined` columns. A year with fewer than COVISITS_FULL_YEAR_DAYS days is partial: it
+    combined) + `giorni_coperti`. The `_combined` columns merge the two profiles with the fixed weights
+    COVISITS_PROFILE_WEIGHTS (TOURIST 1, VISITOR 0.5). A year with fewer than COVISITS_FULL_YEAR_DAYS days is partial: it
     is kept, flagged by `giorni_coperti` and by a warning."""
     df = clip(df, window, name="covisits")  # only the days of the window enter the yearly indicators
     out = comune_flow_indicators(
@@ -312,7 +247,7 @@ def process_covisits(df, area_comune, weights=None, window=BASE_WINDOW):
         damping=COVISITS_PAGERANK_DAMPING,
         profiles=COVISITS_PROFILES,
         metrics=COVISITS_METRICS,
-        weights=weights or COVISITS_FIXED_WEIGHTS,
+        weights=COVISITS_PROFILE_WEIGHTS,
     )
     partial = out.groupby("DATA")["giorni_coperti"].first()
     for year, days in partial[partial < COVISITS_FULL_YEAR_DAYS].items():
@@ -347,10 +282,9 @@ def process_beds(strutture_std, mapping_comuni, window=BASE_WINDOW):
     return df[["DATA", "ID_COMUNE", BEDS_ALB_COL, BEDS_XALB_COL]].reset_index(drop=True)
 
 
-def _energy_monthly(df, mapping_comuni, value_col, source, by_category=False):
+def _energy_monthly(df, mapping_comuni, value_col, source):
     """Standardized energy rows -> monthly consumption per comune (DATA = first day of the month, ID_COMUNE,
-    value_col), summing the usage categories (`codice_utilizzo`) or, with by_category=True, keeping them
-    (one row per comune, month and category, with the column `codice_utilizzo`)."""
+    value_col), summing the usage categories (`codice_utilizzo`)."""
     df = df.copy()
     df = remove_provincia(df, comune_col="LOCATION", upper=True)
     df["ID_COMUNE"] = df["LOCATION"].apply(
@@ -364,7 +298,7 @@ def _energy_monthly(df, mapping_comuni, value_col, source, by_category=False):
     df = df[df["ID_COMUNE"].notna()].copy()
     df["ID_COMUNE"] = pad_id_comune(df["ID_COMUNE"])
 
-    keys = ["DATA", "ID_COMUNE"] + (["codice_utilizzo"] if by_category else [])
+    keys = ["DATA", "ID_COMUNE"]
     long = df.melt(
         id_vars=keys,
         value_vars=list(ENERGY_MONTHS),
@@ -393,15 +327,6 @@ def _energy_monthly(df, mapping_comuni, value_col, source, by_category=False):
         .sort_values(keys)
         .reset_index(drop=True)
     )
-
-
-def energy_monthly_by_category(df, mapping_comuni, source):
-    """Monthly consumption per comune AND usage category, for the estimation of the profile weights:
-    ID_COMUNE, month ('YYYY-MM'), code (`codice_utilizzo` as a string), y. Rows without a value are dropped."""
-    m = _energy_monthly(df, mapping_comuni, "y", source, by_category=True)
-    m["month"] = m["DATA"].dt.strftime("%Y-%m")
-    m["code"] = m["codice_utilizzo"].map(normalize_code)
-    return m.dropna(subset=["y"])[["ID_COMUNE", "month", "code", "y"]].reset_index(drop=True)
 
 
 def process_energy(df, mapping_comuni, value_col, source, window=BASE_WINDOW):
@@ -586,7 +511,7 @@ def process_data(
 ):
     """Base build: every dataset is restricted to `window` (default: period.start .. period.base_end of
     settings.yaml), so nothing before 2022-01-01 and nothing after 2024-12-31 reaches the processed data
-    (nor the estimation of the covisits profile weights)."""
+    ."""
     normalized_dir = Path(normalized_dir)
     logger.info("Time window of the base build: %s", window)
 
@@ -596,7 +521,7 @@ def process_data(
         for name, spec in DATASETS.items()
         if spec.normalized
     }
-    for name in ("ee_prelievi", "gas_prelievi", "vodafone_covisits"):  # big / used by the weights
+    for name in ("ee_prelievi", "gas_prelievi", "vodafone_covisits"):  # big
         std[name] = clip(std[name], window, name=name)
     maps = load_mappings(mapping_dir)
     mapping_comuni, mapping_vodafone, mapping_apt = (
@@ -643,19 +568,7 @@ def process_data(
         std["gas_prelievi"], mapping_comuni, GAS_PRELIEVI_VALUE_COLS[0], "gas_prelievi", window
     )
     area_comune = covisits_area_comune(mapping_dir, mapping_vodafone, mapping_comuni)
-    covisits_weights = covisits_profile_weights(
-        std["vodafone_covisits"],
-        area_comune,
-        {  # consumption BY usage category (not the aggregate): see COVISITS_WEIGHT_CATEGORIES
-            "ee": energy_monthly_by_category(std["ee_prelievi"], mapping_comuni, "ee_prelievi"),
-            "gas": energy_monthly_by_category(std["gas_prelievi"], mapping_comuni, "gas_prelievi"),
-        },
-        strutture_pr,
-        out_dir,
-    )
-    covisits_pr = process_covisits(
-        std["vodafone_covisits"], area_comune, covisits_weights, window
-    )
+    covisits_pr = process_covisits(std["vodafone_covisits"], area_comune, window)
     dict_processed = {
         "popolazione_pr": process_popolazione(std["popolazione"], mapping_comuni, window),
         "strutture_pr": strutture_pr,

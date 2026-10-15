@@ -17,7 +17,7 @@ Same four steps for the base build (`gen_phenomenon_dataframes.py`) and for the 
 | update 2025 | 2025-01-01 | 2025-12-31 | appends the 2025 rows to the existing phenomena |
 
 Nothing before 2022-01-01 survives anywhere (D1). The window is applied in step 2 on every dataset (before the heavy
-computations, so that e.g. 2025 days do not enter the base build or the estimate of the profile weights), and a last
+computations, so that e.g. 2025 days do not enter the base build), and a last
 time in step 3 on the final phenomena. Yearly data are kept by year, daily data by date.
 
 ## Step 0 – Download
@@ -56,9 +56,9 @@ Presences and beds: for a day, the beds of its year are used; if the year is mis
 With the window of D2 the base build never needs 2025 beds; the update processes the 2025 strutture first and uses them
 for the 2025 Vodafone presences (U5).
 
-**Profile weights (flussi OD).** The base build estimates, from monthly energy consumption by usage category, how much a
-visitor-day weighs compared with a tourist-day, and saves it in `covisits_profile_weights.json` (fallback: fixed
-weights). The update loads that file instead of re-estimating, so the years stay comparable.
+**Profile weights (flussi OD).** The `_combined` indicators merge TOURIST and VISITOR with fixed weights
+(`COVISITS_PROFILE_WEIGHTS` in `utils/datasets.py`: TOURIST 1, VISITOR 0.5). No energy / gas based estimation.
+An area that covers several comuni passes its indicators to all of them.
 
 **Update specifics.** The update only processes the rows of its window: `process_update_std_data` receives the window
 and passes it to every processor. The co-visit indicators of a year need all its days, so the base standardized

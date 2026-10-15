@@ -42,7 +42,6 @@ territorial_indexes/
     ├── steps/             download_data, standardize_raw_data, process_std_data, create_phenomena_df (base build; shared by the update)
     │                      standardize_update_raw_data, process_update_std_data (update; compute_phenomena is shared)
     ├── flows.py           OD co-visits -> yearly flow indicators (areas -> comuni), tourists + visitors combined
-    ├── profile_weights.py weights of TOURIST vs VISITOR learnt from the data (used by flows.py)
     ├── adapters/          year-specific layouts -> aligned layout (registry)
     └── update/            sources (readers), spec (config, parts)
 ```
@@ -99,7 +98,7 @@ profile, country) are turned into **yearly** indicators per comune. The computat
 | Step | What happens |
 |------|--------------|
 | 1 Standardization | the file is read in chunks and only the rows used by the indicators are kept: area level (`TN_MKT_AL_3`), `TOURIST` / `VISITOR`, empty `userCountry` (total over the countries). Output `vodafone_covisits_std` (`DATA`, source/target id and ambito, `covisitType`, `userProfile`, `value`). |
-| 2 Processing | per year and profile: quota in ingresso `UD(*->j)/T(j)`, quota in uscita `UD(j->*)/T(j)`, quota intra-ambito, PageRank of the UD network; then areas -> comuni (an area passes its value to all its comuni, a comune with several areas gets the weighted mean). Output `vodafone_covisits_pr`: `DATA` (year), `ID_COMUNE`, `<metric>_<tourist, visitor or combined>` for the 4 metrics, `giorni_coperti`. The `_combined` columns merge the two profiles with a weight each, see below. |
+| 2 Processing | per year and profile: quota in ingresso `UD(*->j)/T(j)`, quota in uscita `UD(j->*)/T(j)`, quota intra-ambito, PageRank of the UD network; then areas -> comuni (an area passes its value to all its comuni, a comune with several areas gets the weighted mean). Output `vodafone_covisits_pr`: `DATA` (year), `ID_COMUNE`, `<metric>_<tourist, visitor or combined>` for the 4 metrics, `giorni_coperti`. The `_combined` columns merge the two profiles with a fixed weight each (VISITOR 0.5), see below. |
 | 3 Phenomena | `phen_flussi_od` = `vodafone_covisits_pr` |
 
 * A year with fewer than `COVISITS_FULL_YEAR_DAYS` (360) days is **partial**: it is kept, flagged by `giorni_coperti` and by a warning.
@@ -118,7 +117,7 @@ profile, country) are turned into **yearly** indicators per comune. The computat
   and `pagerank-discretizzato` (PageRank in quantile classes, 10 by default: `PAGERANK_N_CLASSES` in
   `trentino_indicators.py`). They read the `_combined` columns; the tourist / visitor ones are returned next to them.
 
-#### Tourists and visitors: weighted union (`*_combined`)
+#### Tourists and visitors: weighted union (`*_combined`, VISITOR weight 0.5)
 
 A tourist-day (overnight stay) and a visitor-day (excursionist) do not weigh the same on a territory, so the
 indicators of the backend use their **weighted union**. The weights are applied on the user-days BEFORE the indicators
@@ -127,33 +126,13 @@ are computed (`utils/flows.py: combine_profiles`): with weights `w_T = 1`, `w_V`
 computed on the network of the weighted flows. With equal weights this is the plain pooled share; with `w_V = 0` it is
 the tourist indicator. The reliability threshold `COVISITS_MIN_T` always refers to the raw user-days.
 
-How the weight is chosen (`COVISITS_WEIGHT_MODE` in `utils/datasets.py`):
+The weights are fixed in `utils/datasets.py`: `COVISITS_PROFILE_WEIGHTS = {"TOURIST": 1.0, "VISITOR": 0.5}`
+(`COVISITS_VISITOR_COEFFICIENT = 0.5`), i.e. a visitor-day counts half of a tourist-day. They are not estimated from the
+energy / gas consumption any more (nothing is saved, nothing is reused by the update): change the coefficient and rerun
+the base build and the update to recompute the `_combined` columns.
 
-* `"estimate"` (default): learnt from the data in `utils/profile_weights.py`. The weight of a profile is its marginal
-  pressure on the comune relative to the tourists, measured through the monthly consumption of electricity and gas
-  **by usage category** (`codice_utilizzo`, roles in `COVISITS_WEIGHT_CATEGORIES`): non-negative regression of the
-  consumption of each comune-month on the user-days of the two profiles, net of the size of the comune and of the month
-  (two-way fixed effects, fixed-point on the size), uncertainty by cluster bootstrap over the comuni.
-  * `shared` categories (553 restaurants, 602 transport, 920 recreation, 930 other services: used by both profiles) are
-    summed per carrier and give the weight;
-  * `tourist_only` categories (551 hotels) are a **placebo**: the visitors must not explain them; if they do, the model
-    mixes up the profiles and the fixed weights are used instead (hotels are not in the estimate, otherwise the visitors
-    would be penalised just because they do not sleep there);
-  * each shared category is also fitted alone (`diagnostics.diagnostic_targets`) to see whether they agree.
-  Targets that are not reliable (too few comuni, effect of the tourists not clearly positive) are discarded, the others
-  averaged with inverse-variance weights; if none is reliable the `COVISITS_FIXED_WEIGHTS` are used and the reason is
-  logged. The pipeline warns about configured usage codes that are not in the data. Result, with the coefficients, the 95%
-  intervals, the within R2, the placebo and the collinearity of the two presences, in
-  `Output/data/data_processed/covisits_profile_weights.json` (**read it after the base build**: `source` must be
-  `estimated`, the placebo `passed`, and the interval of the visitor weight narrow).
-* `"fixed"`: `COVISITS_FIXED_WEIGHTS` (e.g. `{"TOURIST": 1.0, "VISITOR": 0.3}`), if you prefer to decide the weights.
-* The weights are estimated **once, by the base build**, and saved: the yearly updates reuse them, so that the years of the
-  base build and of the updates stay comparable. To re-estimate them, rerun the base build (all the years change).
-* Why energy consumption, what the weight means and what its limits are: **decision record** at the top of
-  `utils/profile_weights.py` (read it before changing the method). In short: it is the only per-comune demand-side
-  signal available and it is roughly additive per guest, but it measures accommodation-type pressure, not mobility
-  pressure, and it is an indirect proxy. If you cannot defend the estimate, use `"fixed"` weights; other proxies
-  (traffic, waste, ...) can be added through the same monthly interface (`build_energy_targets` / `estimate_profile_weights`).
+**Areas -> comuni.** An area that covers several comuni passes its value to **all** of them (`flows.build_area_comune`
+keeps every (area, comune) pair); a comune with several areas gets the weighted mean.
 
 ```bash
 python -m gen_phenomenon_dataframes                   # all steps, parquet

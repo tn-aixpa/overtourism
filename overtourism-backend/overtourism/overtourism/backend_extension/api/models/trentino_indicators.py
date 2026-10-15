@@ -64,12 +64,12 @@ _REGISTRY: dict[str, Callable[[], Indicator]] = {
     ),
     "ospitalita-letti": lambda: HospitalityIndexBedsIndicator(STRUCTURES_SOURCE),
     "turismo-sommerso": lambda: HiddenTourismIndicator(PRESENCES_SOURCE),
-    # "quota-mobilita-ingresso": lambda: InboundMobilityShareIndicator(FLOWS_OD_SOURCE),
-    # "quota-mobilita-uscita": lambda: OutboundMobilityShareIndicator(FLOWS_OD_SOURCE),
-    # "quota-intra-ambito": lambda: IntraAmbitoShareIndicator(FLOWS_OD_SOURCE),
-    # "pagerank-discretizzato": lambda: DiscretizedPageRankIndicator(
-    #     FLOWS_OD_SOURCE, PAGERANK_N_CLASSES
-    # ),
+    "quota-mobilita-ingresso": lambda: InboundMobilityShareIndicator(FLOWS_OD_SOURCE),
+    "quota-mobilita-uscita": lambda: OutboundMobilityShareIndicator(FLOWS_OD_SOURCE),
+    "quota-intra-ambito": lambda: IntraAmbitoShareIndicator(FLOWS_OD_SOURCE),
+    "pagerank-discretizzato": lambda: DiscretizedPageRankIndicator(
+        FLOWS_OD_SOURCE, PAGERANK_N_CLASSES
+    ),
     _VARIATION_RATE_KEY: lambda: VariationRateIndicator(),
     _PERIOD_PERCENTAGE_IMPACT_KEY: lambda: PeriodPercentageImpactIndicator(),
 }
@@ -213,7 +213,7 @@ class HiddenTourismIndicator(Indicator):
 # They read `phen_flussi_od`: one row per comune and YEAR with, for every metric, a column for the TOURIST
 # profile, one for the VISITOR (excursionist) profile and one for their weighted union (`<metric>_combined`).
 # The union is computed in the data preparation on the user-days (a visitor-day counts `w` tourist-days,
-# w learnt from the data, see data_preparation/utils/profile_weights.py), so the indicators here only read it.
+# w = 0.5 fixed, see COVISITS_PROFILE_WEIGHTS in data_preparation), so the indicators here only read it.
 # The values are yearly: a requested window returns the value of its year(s) (mean over the years of the window),
 # and the seasonality filter does not change them.
 
@@ -251,7 +251,7 @@ class InboundMobilityShareIndicator(_FlowIndicator):
     """UD(*->j) / T(j): share of the users present in j who arrive from another area."""
 
     metric = "quota_ingresso"
-    name = "Quota di mobilità in ingresso"
+    name = "Flussi - Quota di mobilità in ingresso"
     description = (
         "La quota di mobilità in ingresso misura la <strong>quota degli utenti presenti in un'area che "
         "arrivano da un'altra area</strong> (rapporto fra gli utenti in arrivo da altre aree e gli utenti "
@@ -268,7 +268,7 @@ class OutboundMobilityShareIndicator(_FlowIndicator):
     """UD(j->*) / T(j): share of the users present in j who go on to another area."""
 
     metric = "quota_uscita"
-    name = "Quota di mobilità in uscita"
+    name = "Flussi - Quota di mobilità in uscita"
     description = (
         "La quota di mobilità in uscita misura la <strong>quota degli utenti presenti in un'area che "
         "proseguono verso un'altra area</strong> (rapporto fra gli utenti diretti verso altre aree e gli "
@@ -284,7 +284,7 @@ class IntraAmbitoShareIndicator(_FlowIndicator):
     """Share of the UD flow of an area that stays inside its own ambito."""
 
     metric = "quota_intra_ambito"
-    name = "Quota intra-ambito"
+    name = "Flussi - Quota intra-ambito"
     description = (
         "La quota intra-ambito misura la <strong>quota dei flussi di un'area (in ingresso e in uscita) "
         "scambiati con aree dello stesso ambito turistico</strong>; il resto è mobilità inter-ambito. "
@@ -306,7 +306,7 @@ class DiscretizedPageRankIndicator(_FlowIndicator):
     """
 
     metric = "pagerank"
-    name = "PageRank discretizzato"
+    name = "Flussi - PageRank discretizzato"
     description = (
         "Il PageRank misura la <strong>centralità di un'area nella rete dei flussi</strong> fra aree: è alto "
         "per le tappe che ricevono flusso da aree a loro volta rilevanti. Per la lettura su mappa il valore è "

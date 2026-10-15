@@ -13,7 +13,7 @@ with T(j) = ND(*->j): users present in the area j (rows with sourceId = '*' and 
 The values are user-days summed over the year; the privacy thresholds zero the small counts.
 
 Besides the two profiles, a COMBINED profile merges them with a weight per profile (see
-`combine_profiles` and profile_weights.py): the user-days of every profile are multiplied by its weight
+`combine_profiles`; the weight of VISITOR is COVISITS_PROFILE_WEIGHTS in datasets.py): the user-days of every profile are multiplied by its weight
 BEFORE the indicators are computed (equivalent users: share = sum_p w_p UD_p / sum_p w_p T_p, PageRank on the
 network of the weighted flows), so a profile counts in proportion to its volume AND to its weight.
 The reliability threshold `min_t` is always applied on the raw (unweighted) user-days.
@@ -103,14 +103,16 @@ def build_area_comune(geojson_path, mapping_vodafone, mapping_comuni) -> pd.Data
             else _as_id_list(mapping_vodafone.get(r["name"]))
         )
         rows.extend((r["id"], f"{cid:06d}") for cid in ids)
+    # Overrides take precedence if an area also appears in the GeoJSON: its GeoJSON rows are replaced.
+    rows = [r for r in rows if r[0] not in AREA_COMUNE_OVERRIDES]
     rows.extend(
         (area_id, f"{mapping_comuni[comune]:06d}")
         for area_id, comune in AREA_COMUNE_OVERRIDES.items()
     )
-    # Overrides take precedence if an area later appears in the GeoJSON.
+    # An area that covers several comuni keeps ALL of them (it passes its value to each one, see to_comuni):
+    # only exact duplicates are dropped, never the other comuni of the same area.
     rows = list(dict.fromkeys(rows))
-    area_comune = pd.DataFrame(rows, columns=["areaId", "ID_COMUNE"])
-    return area_comune.drop_duplicates("areaId", keep="last").reset_index(drop=True)
+    return pd.DataFrame(rows, columns=["areaId", "ID_COMUNE"]).reset_index(drop=True)
 
 
 # ------------------------------------------------------------------ yearly aggregation
