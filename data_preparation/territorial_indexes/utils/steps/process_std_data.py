@@ -7,7 +7,7 @@ Input : Output/data/normalized/   (+ mapping json files, read from Output/mappin
 Output: Output/data/data_processed/   (popolazione_pr, strutture_pr, vodafone_pr,
                                        presenze_alb_pr, presenze_extralb_pr,
                                        ee_prelievi_pr, gas_prelievi_pr, ee_totale_pr, gas_totale_pr,
-                                       vodafone_covisits_pr)
+                                       vodafone_covisits_pr, vodafone_provenienza_pr)
 
 Transformations: ID_COMUNE resolution, filtering, selection of the columns, computation of
 aggregated columns, disaggregation of the presences to comune x day (vodafone: areas -> comuni by beds;
@@ -45,6 +45,10 @@ from utils.config import (
 )
 from utils.datasets import (  # noqa: F401  (re-exported for convenience)
     COVISITS_FULL_YEAR_DAYS,
+    PROVENIENZA_FULL_YEAR_DAYS,
+    PROVENIENZA_LOC_TYPE,
+    PROVENIENZA_MIN_PRESENZE,
+    PROVENIENZA_PROFILE,
     COVISITS_METRICS,
     COVISITS_MIN_T,
     COVISITS_PAGERANK_DAMPING,
@@ -76,6 +80,7 @@ from utils.disaggregation import (
     is_whole,
 )
 from utils.flows import build_area_comune, comune_flow_indicators
+from utils.provenienza import comune_hhi
 from utils.stay_distribution import distribute_by_stay
 from utils.io import read_df, read_json, save_computed_dfs
 
@@ -215,6 +220,38 @@ def process_vodafone(
         assert_sums_match(df, out, VODAFONE_VALUE_COLS, ["_TID"], name="vodafone")
         assert_sums_match(df, out, VODAFONE_VALUE_COLS, ["DATA"], name="vodafone/day")
     return standard_ordering_cols(out.drop(columns="_TID").reset_index(drop=True))
+
+
+def process_provenienza(df, area_comune, window=BASE_WINDOW):
+    """Standardized Vodafone presences (with `userCountry`) -> comune x YEAR concentration of the source markets:
+    `hhi_provenienza` (normalized HHI of the tourist presences by country, see utils/provenienza.py) and
+    `giorni_coperti`. Only TOURIST, area level; rows without country are ignored. A year with fewer than
+    PROVENIENZA_FULL_YEAR_DAYS days is partial: kept, flagged by `giorni_coperti` and by a warning."""
+    if "userCountry" not in df.columns:
+        raise ValueError(
+            "[process_provenienza] the Vodafone presences have no `userCountry` column: "
+            "the source markets cannot be computed"
+        )
+    df = df[
+        (df["userProfile"] == PROVENIENZA_PROFILE) & (df["locType"] == PROVENIENZA_LOC_TYPE)
+    ]
+    df = clip(df, window, name="provenienza")
+    df = df[df["userCountry"].notna() & (df["userCountry"].astype(str).str.strip() != "")]
+    df = pd.DataFrame(
+        {
+            "DATA": df["DATA"].astype(str).str[:10],
+            "areaId": df["locId"].astype(str).str.replace(r"\.0$", "", regex=True),
+            "userCountry": df["userCountry"].astype(str),
+            "value": pd.to_numeric(df["presenze"], errors="coerce").fillna(0.0),
+        }
+    )
+    out = comune_hhi(df, area_comune, PROVENIENZA_MIN_PRESENZE)
+    partial = out.groupby("DATA")["giorni_coperti"].first()
+    for year, days in partial[partial < PROVENIENZA_FULL_YEAR_DAYS].items():
+        logger.warning(
+            "[process_provenienza] %s is a partial year (%d days): compare it with care", year, days
+        )
+    return out
 
 
 def stack_covisits(frames):
@@ -597,6 +634,7 @@ def process_data(
     )
     area_comune = covisits_area_comune(mapping_dir, mapping_vodafone, mapping_comuni)
     covisits_pr = process_covisits(std["vodafone_covisits"], area_comune, window)
+    provenienza_pr = process_provenienza(std["vodafone"], area_comune, window)
     dict_processed = {
         "popolazione_pr": process_popolazione(
             std["popolazione"], mapping_comuni, window
@@ -610,6 +648,7 @@ def process_data(
         DATASETS["ee_totale"].processed_name: ee_total_pr,
         DATASETS["gas_totale"].processed_name: gas_total_pr,
         DATASETS["vodafone_covisits"].processed_name: covisits_pr,
+        DATASETS["vodafone_provenienza"].processed_name: provenienza_pr,
     }
 
     save_computed_dfs(

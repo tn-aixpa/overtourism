@@ -66,6 +66,10 @@ datasets:
     std: gas_prelievi_std
     processed: gas_prelievi_pr
     update: gas_prelievi_update_pr
+  vodafone_provenienza:
+    std: ""                                # base build: derived from vodafone_std
+    processed: vodafone_provenienza_pr
+    update: vodafone_provenienza_update_pr
   ee_totale:
     std: ee_totale_std
     processed: ee_totale_pr
@@ -85,6 +89,7 @@ phenomena:
   phen_presenze: [vodafone, presenze_alb, presenze_extralb]
   phen_consumption: [ee_prelievi, gas_prelievi, ee_totale, gas_totale]
   phen_flussi_od: [vodafone_covisits]
+  phen_provenienza: [vodafone_provenienza]
 
 # Data lake / platform
 platform:

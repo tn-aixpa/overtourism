@@ -46,9 +46,7 @@ from utils.datasets import (
 
 logger = logging.getLogger(__name__)
 
-ENERGY_TOTAL_CODE = (
-    "TOTALE"  # codice_utilizzo given to the rows of the files without usage categories
-)
+ENERGY_TOTAL_CODE = "TOTALE"  # codice_utilizzo given to the rows of the files without usage categories
 
 ENERGY_MONTHS = (
     "gennaio",
@@ -134,8 +132,7 @@ def read_base_vodafone(raw_dir, type_format=TYPE_FORMAT) -> pd.DataFrame:
     """Vodafone presences of the base build: `vodafone_attendences` (2022-01-01 .. 2024-03-31) completed with
     `vodafone_attendences_new.csv` (2023-01-01 .. 2025-12-31), which covers the rest of the base window
     (2024-04-01 .. 2024-12-31). On the dates present in both files the NEWER file wins. The time window
-    (up to 2024-12-31) is applied in step 2: the 2025 days of the newer file are left to the update.
-    """
+    (up to 2024-12-31) is applied in step 2: the 2025 days of the newer file are left to the update."""
     raw_dir = Path(raw_dir)
     old = read_df(raw_dir, "vodafone_attendences", type_format)
     new_path = raw_dir / VODAFONE_NEW_FILE
@@ -162,11 +159,7 @@ def read_base_vodafone(raw_dir, type_format=TYPE_FORMAT) -> pd.DataFrame:
 def read_energy_category(path) -> pd.DataFrame:
     """Read a semicolon-delimited energy category file (a path or a bytes buffer) and repair the header
     variant in 96.csv."""
-    path = (
-        path
-        if isinstance(path, (str, Path))
-        else io.StringIO(path.read().decode("utf-8-sig"))
-    )
+    path = path if isinstance(path, (str, Path)) else io.StringIO(path.read().decode("utf-8-sig"))
     headers = [
         str(column).strip().lstrip("\ufeff")
         for column in pd.read_csv(path, sep=";", nrows=0).columns
@@ -221,7 +214,7 @@ def standardize_energy_total(raw_dir, dataset) -> pd.DataFrame:
 def standardize_energy_folder(raw_dir, folder) -> pd.DataFrame:
     """Stack all category CSVs in one energy folder without aggregating their values."""
     folder_path = Path(raw_dir) / folder
-    totals = {Path(k).name for k in ENERGY_TOTAL_FILES.values()}
+    totals = {Path(k).name for k in ENERGY_TOTAL_FILES.values()}  # read apart (ee_totale / gas_totale)
     files = sorted(p for p in folder_path.glob("*.csv") if p.name not in totals)
     if not files:
         raise FileNotFoundError(f"No category CSV files found in {folder_path}")
@@ -247,8 +240,7 @@ VODAFONE_NEW_FILE = "vodafone_attendences_new.csv"
 def standardize_covisits_columns(df) -> pd.DataFrame:
     """Vodafone OD co-visits: area x area x day. Text columns cleaned (area ids without the '.0' of
     the floats, empty = ''), value numeric, `date` -> DATA. Only the rows used by the flow indicators
-    are kept: area level, TOURIST / VISITOR and, if COVISITS_TOTAL_ROWS_ONLY, the total over the countries.
-    """
+    are kept: area level, TOURIST / VISITOR and, if COVISITS_TOTAL_ROWS_ONLY, the total over the countries."""
     df = df[COVISITS_COLS].copy()
     for c in COVISITS_COLS[:-1]:
         df[c] = (
@@ -271,9 +263,7 @@ def read_covisits_raw(path) -> pd.DataFrame:
     """Reads the raw OD co-visits (csv in chunks, or parquet) and standardizes it."""
     path = Path(path)
     if path.suffix == ".parquet":
-        return standardize_covisits_columns(
-            pd.read_parquet(path, columns=COVISITS_COLS)
-        )
+        return standardize_covisits_columns(pd.read_parquet(path, columns=COVISITS_COLS))
     parts = [
         standardize_covisits_columns(chunk)
         for chunk in pd.read_csv(
@@ -316,9 +306,7 @@ def standardize_raw_data(
             raw_dir, "gas_prelievi"
         ),
         DATASETS["ee_totale"].std_name: standardize_energy_total(raw_dir, "ee_totale"),
-        DATASETS["gas_totale"].std_name: standardize_energy_total(
-            raw_dir, "gas_totale"
-        ),
+        DATASETS["gas_totale"].std_name: standardize_energy_total(raw_dir, "gas_totale"),
         DATASETS["vodafone_covisits"].std_name: covisits_df,
     }
     save_computed_dfs(

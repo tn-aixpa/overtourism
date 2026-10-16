@@ -28,7 +28,7 @@ or `mapping/` is never downloaded again** (checked file by file in the base buil
 `--force-download` downloads everything again. The base build downloads: popolazione 2020–2024,
 strutture (Annuario csv + 2024 ods), Vodafone presences (`vodafone_attendences` + `_new`, A1), Vodafone OD co-visits,
 the ISPAT arrivals / presences 2022–2024 (A2), the energy category files and the two energy total files
-`totale_ee.csv` / `totale_gas.csv` (A11). The update downloads the files listed in its
+`Energia/ee_prelievi/totale_ee.csv` / `Energia/gas_prelievi/totale_gas.csv` (A11; they are in the folders of the category files, also in `raw_data/`). The update downloads the files listed in its
 yaml (`config/updates/update_2025.yaml`). Energy files keep their folder (`ee_prelievi/`, `gas_prelievi/`) because the
 two carriers have identically named files.
 
@@ -55,6 +55,7 @@ Every output has `DATA` and `ID_COMUNE` (6 digits, one comune per row) plus the 
 | presenze_alb / presenze_extralb | comune × day | ISPAT monthly arrivals and presences per APT / province → daily presences through the average length of stay (A8), then split among comuni by `alberghieri` / `extra alb.` beds; each month adds up exactly to the official figure |
 | ee_prelievi / gas_prelievi | comune × day | categories summed per comune-month, spread evenly over the days (A9); column `ee_services` / `gas_services` |
 | ee_totale / gas_totale | comune × day | total files: same treatment (A9, A11); column `ee_total` / `gas_total` |
+| vodafone_provenienza | comune × year | normalized HHI of the TOURIST presences by country of origin, per area × year, then areas → comuni (A12); derived from the standardized Vodafone presences |
 | vodafone_covisits | comune × year | flow indicators: share of incoming and outgoing users, share of intra-ambito flow, PageRank, for TOURIST, VISITOR and a weighted `_combined`; `giorni_coperti` = days with data (A10) |
 
 Presences and beds: for a day, the beds of its year are used; if the year is missing the nearest one (with a warning).
@@ -79,6 +80,7 @@ to the year of the update.
 | `phen_presenze` | vodafone, presenze_alb, presenze_extralb | **inner join** on DATA + ID_COMUNE; the dropped records (e.g. days not covered by Vodafone) are counted in warnings |
 | `phen_consumption` | ee_prelievi, gas_prelievi, ee_totale, gas_totale | outer join on DATA + ID_COMUNE; columns `DATA, ID_COMUNE, ee_services, ee_total, gas_services, gas_total` |
 | `phen_flussi_od` | vodafone_covisits | as is |
+| `phen_provenienza` | vodafone_provenienza | as is: `DATA` (year), `ID_COMUNE`, `hhi_provenienza`, `giorni_coperti` |
 
 * **gen**: the phenomena are created from the `_pr` files and cut to 2022-01-01 .. 2024-12-31.
 * **update**: a phenomenon is recomputed only if **all** its input datasets are in the update (the datasets enabled in

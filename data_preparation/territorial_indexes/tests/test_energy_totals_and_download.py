@@ -57,10 +57,10 @@ def test_download_skips_files_already_in_raw(tmp_path, monkeypatch):
 
     calls = []
     monkeypatch.setattr(download_data, "fetch_bytes", lambda key, **kw: calls.append(key))
-    monkeypatch.setattr(download_data, "S3_DATA", ["vodafone_attendences_new.csv", "totale_ee.csv"])
+    monkeypatch.setattr(download_data, "S3_DATA", ["vodafone_attendences_new.csv", "Energia/ee_prelievi/totale_ee.csv"])
     monkeypatch.setattr(download_data, "download_mappings", lambda *a, **k: None)
     download_data.download_raw_base_data(out_dir=tmp_path)
-    assert calls == ["totale_ee.csv"]
+    assert calls == ["Energia/ee_prelievi/totale_ee.csv"]
     calls.clear()
     download_data.download_raw_base_data(out_dir=tmp_path, force=True)
-    assert calls == ["vodafone_attendences_new.csv", "totale_ee.csv"]
+    assert calls == ["vodafone_attendences_new.csv", "Energia/ee_prelievi/totale_ee.csv"]

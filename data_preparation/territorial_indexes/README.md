@@ -1,7 +1,7 @@
 # Territorial indexes: data preparation pipeline
 
 Builds the phenomenon dataframes (`phen_popolazione`, `phen_strutture`, `phen_presenze`, `phen_consumption`,
-`phen_flussi_od`) behind the territorial indexes: a **base build** (gen) and a **yearly update**
+`phen_flussi_od`, `phen_provenienza`) behind the territorial indexes: a **base build** (gen) and a **yearly update**
 (gen can also run the update of 2025 only, see [Running](#running-gen-and-the-2025-update)). Part of
 `data_preparation/` (see its [README](../README.md)); the model pipelines live in `../model/`. All commands below are run
 from this folder (`territorial_indexes/`).
@@ -48,6 +48,7 @@ territorial_indexes/
     │                      standardize_update_raw_data, process_update_std_data (update; compute_phenomena is shared)
     ├── flows.py           OD co-visits -> yearly flow indicators (areas -> comuni), tourists + visitors combined
     ├── adapters/          year-specific layouts -> aligned layout (registry)
+    ├── provenienza.py     normalized HHI of the source markets (areas -> comuni)
     └── update/            sources (readers), spec (config, parts)
 ```
 
@@ -65,7 +66,8 @@ Runs all the steps, from the download to the final files:
 * **Download** saves data as they arrive: no renaming, no normalization. The mappings go to `Output/mapping/`, not to raw_data. The 2024 strutture ODS is part of the base build; later annual strutture files remain update inputs.
 * **Standardization** uniforms column names, `DATA`/`LOCATION` schema, dates and comune names (no filtering/aggregation).
   Output: `popolazione_std`, `strutture_std`, `vodafone_std`, `ee_prelievi_std`, `gas_prelievi_std`,
-  `ee_totale_std`, `gas_totale_std`, `vodafone_covisits_std`.
+  `ee_totale_std`, `gas_totale_std`, `vodafone_covisits_std`. (`vodafone_std` keeps `userCountry` and `userProfile`; it also feeds
+  `phen_provenienza`.)
   The ISPAT arrivals / presences (alb, extralb) are **not normalized**. Electricity and gas category CSVs
   from `Energia/ee_prelievi/` and `Energia/gas_prelievi/` are each stacked into one normalized file;
   category rows remain separate at this step.
@@ -89,11 +91,16 @@ Runs all the steps, from the download to the final files:
   `phen_consumption` has the columns `DATA`, `ID_COMUNE`, `ee_services`, `ee_total`, `gas_services`, `gas_total`
   (daily consumption per comune; electricity in kWh, gas in Smc). `*_services` come from the category files
   (`Energia/<ee_prelievi|gas_prelievi>/*.csv`, tourism-related usage categories summed); `*_total` come from the two
-  files `totale_ee.csv` and `totale_gas.csv` (all the usages). For each of the four measures the monthly value of a
+  files `Energia/ee_prelievi/totale_ee.csv` and `Energia/gas_prelievi/totale_gas.csv` (all the usages). For each of the four measures the monthly value of a
   comune is divided evenly across the calendar days of the month (including leap days) and the four are combined
   on `DATA` + `ID_COMUNE` (outer join). In the update they are read with the `energy_csv` reader and the
   `energia_categorie` adapter (same layout as the base files, see `utils/adapters/energia.py` and assumptions
   U1 / A11 in `ASSUMPTIONS.md`).
+* **Provenienza** (`phen_provenienza`, index "Provenienza - Indice di concentrazione mercati provenienza"): per comune and **year**,
+  `hhi_provenienza` = normalized Herfindahl-Hirschman index of the **TOURIST** presences by country of origin
+  (0 = evenly spread over the markets, 1 = a single market) and `giorni_coperti`. Computed in `utils/provenienza.py` from
+  `vodafone_std` (same raw files of the presences, so nothing more to download); the formula and the assumptions are in
+  `ASSUMPTIONS.md` (A12). Dataset `vodafone_provenienza` -> `vodafone_provenienza_pr`.
 * **Flow indicators** (`phen_flussi_od`): see the next section.
 
 ### Flow indicators (`vodafone_covisits` -> `phen_flussi_od`)
@@ -234,7 +241,7 @@ profile weights, 2024 ISPAT files), see `ASSUMPTIONS.md` (U1–U7).
 
 Update files are kept next to the base ones: raw sources in `raw_data`, `<dataset>_update_std` in `normalized`,
 `<dataset>_update_pr` in `data_processed` (the base `<dataset>_pr` are **not** modified), and the final
-phenomenon files (`phen_popolazione`, `phen_strutture`, `phen_presenze`, `phen_consumption`, `phen_flussi_od`) in
+phenomenon files (`phen_popolazione`, `phen_strutture`, `phen_presenze`, `phen_consumption`, `phen_flussi_od`, `phen_provenienza`) in
 `final_data`, with the update rows appended (only for the phenomena whose datasets are all in the update).
 
 ### Strutture and popolazione

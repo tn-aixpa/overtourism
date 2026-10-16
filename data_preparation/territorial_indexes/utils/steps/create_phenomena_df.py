@@ -4,7 +4,7 @@ STEP 3 - Final phenomenon dataframes.
 
 Input : Output/data/data_processed/   (already disaggregated to comune x day, see process_std_data.py)
 Output: Output/data/final_data/       (phen_popolazione, phen_strutture, phen_presenze,
-                                       phen_consumption, phen_flussi_od)
+                                       phen_consumption, phen_flussi_od, phen_provenienza)
         and, with local=False, the platform
 
 Two modes:
@@ -14,7 +14,7 @@ Two modes:
     A phenomenon is computed only if ALL its input datasets are in the update.
 
 Each phenomenon dataframe contains:
-  - DATA: YYYY for yearly data (popolazione, strutture, phen_flussi_od), YYYY-MM-DD for daily data
+  - DATA: YYYY for yearly data (popolazione, strutture, phen_flussi_od, phen_provenienza), YYYY-MM-DD for daily data
   - ID_COMUNE: zero-padded ISTAT code (e.g. 22001 -> "022001")
 plus the phenomenon's value columns.
 """
@@ -113,6 +113,8 @@ BUILDERS = {
     ),
     # yearly flow indicators per comune (quota in ingresso / uscita, quota intra-ambito, PageRank)
     "phen_flussi_od": lambda pr: pr["vodafone_covisits"],
+    # yearly concentration (normalized HHI) of the source markets of the tourists, per comune
+    "phen_provenienza": lambda pr: pr["vodafone_provenienza"],
 }
 assert set(BUILDERS) == set(PHENOMENA)
 

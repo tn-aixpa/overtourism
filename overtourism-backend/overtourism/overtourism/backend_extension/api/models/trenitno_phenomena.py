@@ -58,6 +58,10 @@ PHENOMENON_LABELS_IT: dict[str, str] = {
     "pagerank_combined": "PageRank (turisti + escursionisti)",
     "pagerank_tourist": "PageRank turisti",
     "pagerank_visitor": "PageRank escursionisti",
+    # Provenienza (phen_provenienza): normalized HHI of the source markets of the tourists.
+    # The label contains "quota" on purpose: index_utils rounds the columns with "quota" / "PageRank" in their
+    # label to decimals (an index in [0, 1] must not be rounded to an integer).
+    "hhi_provenienza": "quota di concentrazione dei mercati (HHI normalizzato)",
 }
 
 # ---------------------------------------------------------------------------
@@ -207,3 +211,14 @@ class FlowIndicatorPhenomenon(Phenomenon):
     def __init__(self, source, col, name=None):
         super().__init__(source, col, agg="mean", municipality_id_col="ID_COMUNE")
         self.name = name or col
+
+
+class ProvenienzaPhenomenon(FlowIndicatorPhenomenon):
+    """
+    ``hhi_provenienza`` of ``phen_provenienza``: yearly normalized Herfindahl-Hirschman index of the source markets
+    (countries) of the tourist presences, per comune (0 = presences spread over many markets, 1 = a single market).
+    Same yearly resolution as the OD flow indicators: broadcast to the days of the year and averaged over the window.
+    """
+
+    def __init__(self, source, col="hhi_provenienza", name=None):
+        super().__init__(source, col, name=name or "hhi_provenienza")

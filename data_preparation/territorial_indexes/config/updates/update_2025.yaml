@@ -32,6 +32,13 @@ datasets:
         reader: csv
         adapter: vodafone_raw             # 2023-01-01 .. 2025-12-31: only 2025 is used here (the base build reads it for 2024-04-01 .. 2024-12-31)
 
+  vodafone_provenienza:
+    enabled: true
+    sources:                                  # same file as `vodafone`: concentration of the source markets (tourists), yearly
+      - file: vodafone_attendences_new.csv    # it must contain ALL the days of the year (the index is yearly)
+        reader: csv
+        adapter: vodafone_raw
+
   presenze_alb:
     enabled: true
     sources:                                  # arrivals + presences of 2025, used as downloaded (no normalization); the 2024 files of the base build
@@ -79,12 +86,12 @@ datasets:
   ee_totale:
     enabled: false         # totals of all the usage categories (same layout of the category files, no codice_utilizzo needed)
     sources:
-      - {file: Energia/totale_ee.csv, reader: energy_csv, adapter: energia_categorie}
+      - {file: Energia/ee_prelievi/totale_ee.csv, reader: energy_csv, adapter: energia_categorie}
 
   gas_totale:
     enabled: false
     sources:
-      - {file: Energia/totale_gas.csv, reader: energy_csv, adapter: energia_categorie}
+      - {file: Energia/gas_prelievi/totale_gas.csv, reader: energy_csv, adapter: energia_categorie}
 
   vodafone_covisits:
     enabled: true

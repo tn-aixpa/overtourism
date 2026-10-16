@@ -11,6 +11,7 @@ from overtourism.overtourism.backend_extension.api.models.trenitno_phenomena imp
     FlowIndicatorPhenomenon,
     PopulationPhenomenon,
     PresencesPhenomenon,
+    ProvenienzaPhenomenon,
 )
 from overtourism.overtourism.setup import index_data_path
 
@@ -26,6 +27,9 @@ PRESENCES_SOURCE = index_data_path / "phen_presenze.parquet"
 FLOWS_OD_SOURCE = (
     index_data_path / "phen_flussi_od.parquet"
 )  # yearly OD flow indicators per comune
+PROVENIENZA_SOURCE = (
+    index_data_path / "phen_provenienza.parquet"
+)  # yearly concentration (normalized HHI) of the source markets per comune
 MACRO_AREAS_FILE = index_data_path / "map_comuni_into_apt.json"
 CODICI_COMUNI_FILE = index_data_path / "mapping_comuni_ISTAT.json"
 
@@ -74,6 +78,9 @@ _REGISTRY: dict[str, Callable[[], Indicator]] = {
     "quota-intra-ambito": lambda: IntraAmbitoShareIndicator(FLOWS_OD_SOURCE),
     "pagerank-discretizzato": lambda: DiscretizedPageRankIndicator(
         FLOWS_OD_SOURCE, PAGERANK_N_CLASSES
+    ),
+    "concentrazione-mercati-provenienza": lambda: SourceMarketsConcentrationIndicator(
+        PROVENIENZA_SOURCE
     ),
     _VARIATION_RATE_KEY: lambda: VariationRateIndicator(),
     _PERIOD_PERCENTAGE_IMPACT_KEY: lambda: PeriodPercentageImpactIndicator(),
@@ -413,6 +420,44 @@ class DiscretizedPageRankIndicator(_FlowIndicator):
         share_below = value[valid].rank(method="average", pct=True)
         classes[valid] = np.ceil(share_below * self.n_classes).clip(1, self.n_classes)
         return classes
+
+
+# ---------------------------------------------------------------------------
+# Provenienza (source markets of the tourists)
+# ---------------------------------------------------------------------------
+# Reads `phen_provenienza`: one row per comune and YEAR with `hhi_provenienza`, the normalized
+# Herfindahl-Hirschman index of the tourist presences by country of origin (computed in the data preparation,
+# `territorial_indexes/utils/provenienza.py`). Yearly like the OD flow indicators: a requested window returns the
+# value of its year(s) and the seasonality filter does not change it.
+
+
+class SourceMarketsConcentrationIndicator(Indicator):
+    """Normalized HHI of the source markets of the tourists: 0 = many markets evenly, 1 = a single market."""
+
+    name = "Provenienza - Indice di concentrazione mercati provenienza"
+    type = INDICATORS_TYPES[0]
+    description = (
+        "L'indice di concentrazione dei mercati di provenienza misura quanto le <strong>presenze di turisti "
+        "provengono da pochi paesi</strong>. È l'<strong>indice di Herfindahl-Hirschman (HHI) normalizzato</strong> "
+        "calcolato sulle quote di presenze per paese di provenienza (l'Italia è un mercato): vale 0 quando le "
+        "presenze sono distribuite in modo uniforme fra molti mercati e 1 quando provengono da un solo mercato. "
+        "Valori alti indicano una forte dipendenza da pochi mercati. L'indice è annuale, riguarda solo i turisti "
+        "ed è calcolato sui dati Vodafone; è lasciato vuoto per le aree con presenze troppo basse. "
+        "I conteggi molto piccoli non sono forniti da Vodafone: l'indice descrive i mercati osservati."
+    )
+    index_value_unit_description = (
+        "Indice HHI normalizzato (0 = mercati diversificati, 1 = un solo mercato)"
+    )
+
+    def __init__(self, source_file):
+        super().__init__(
+            phenomena=[ProvenienzaPhenomenon(source_file)],
+            combinator=self._hhi,
+        )
+
+    @staticmethod
+    def _hhi(df: pd.DataFrame, **_extra) -> pd.Series:
+        return df["hhi_provenienza"]
 
 
 class VariationRateIndicator(Indicator):

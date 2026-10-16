@@ -77,8 +77,7 @@ def fetch_bytes(key: str, *, local_dir=None, save_to=None) -> io.BytesIO:
 
 def already_downloaded(key: str, target_dir, force=False) -> bool:
     """True if `key` is already in `target_dir` (non-empty file named as the object): it is NOT downloaded
-    again, unless force=True. This check is done for every file, in the base build and in the update.
-    """
+    again, unless force=True. This check is done for every file, in the base build and in the update."""
     target = Path(target_dir) / Path(key).name
     return not force and target.is_file() and target.stat().st_size > 0
 
@@ -142,10 +141,7 @@ def download_update_raw_data(
             target_dir = raw_path(src.file, out_dir).parent
             if already_downloaded(src.file, target_dir, force):
                 logger.info(
-                    "[%s] %s already in %s: not downloaded",
-                    dataset,
-                    src.file,
-                    target_dir,
+                    "[%s] %s already in %s: not downloaded", dataset, src.file, target_dir
                 )
                 continue
             logger.info("[%s] downloading %s...", dataset, src.file)

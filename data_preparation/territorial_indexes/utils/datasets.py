@@ -34,11 +34,19 @@ EE_TOTALE_VALUE_COLS = ["ee_total"]
 GAS_TOTALE_VALUE_COLS = ["gas_total"]
 # Final column order of `phen_consumption` (after DATA, ID_COMUNE)
 CONSUMPTION_VALUE_COLS = ["ee_services", "ee_total", "gas_services", "gas_total"]
-# Raw files of the totals: data-lake objects (at the top of the prefix) = names in raw_data
+# Raw files of the totals: data-lake objects, in the folders of the category files (and in raw_data/<folder>/)
 ENERGY_TOTAL_FILES = {
     "ee_totale": "Energia/ee_prelievi/totale_ee.csv",
     "gas_totale": "Energia/gas_prelievi/totale_gas.csv",
 }
+
+# Provenienza: concentration (normalized HHI) of the source markets of the TOURIST presences, see utils/provenienza.py
+PROVENIENZA_VALUE_COLS = ["hhi_provenienza", "giorni_coperti"]
+PROVENIENZA_PROFILE = "TOURIST"  # only tourists
+PROVENIENZA_LOC_TYPE = "TN_MKT_AL_3"  # area level (same as the vodafone presences)
+PROVENIENZA_MIN_PRESENZE = 100  # minimum yearly user-days of an area to compute the index (else empty)
+PROVENIENZA_FULL_YEAR_DAYS = 360  # fewer days with data: the year is partial (warning, `giorni_coperti`)
+
 # Vodafone OD co-visits (flows between areas) -> yearly flow indicators per comune, see utils/flows.py.
 # One column per metric and profile (`<metric>_<profile in lower case>`), plus the days covered by the year
 COVISITS_RAW_FILE = (
@@ -128,6 +136,13 @@ DATASETS = {
         _spec("popolazione", POPOLAZIONE_VALUE_COLS, [REF_MAPPING_COMUNI]),
         _spec("strutture", STRUTTURE_VALUE_COLS, [REF_MAPPING_COMUNI]),
         _spec("vodafone", VODAFONE_VALUE_COLS, [REF_MAPPING_VODAFONE, REF_GEOJSON]),
+        # derived from the vodafone presences (same raw files): the base build reads `vodafone_std`
+        _spec(
+            "vodafone_provenienza",
+            PROVENIENZA_VALUE_COLS,
+            [REF_MAPPING_VODAFONE, REF_GEOJSON],
+            normalized=False,
+        ),
         _spec("ee_prelievi", EE_PRELIEVI_VALUE_COLS, [REF_MAPPING_COMUNI]),
         _spec("gas_prelievi", GAS_PRELIEVI_VALUE_COLS, [REF_MAPPING_COMUNI]),
         _spec("ee_totale", EE_TOTALE_VALUE_COLS, [REF_MAPPING_COMUNI]),

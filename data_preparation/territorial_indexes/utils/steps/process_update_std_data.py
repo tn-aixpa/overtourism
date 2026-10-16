@@ -51,6 +51,7 @@ from utils.steps.process_std_data import (
     process_beds,
     process_covisits,
     process_energy,
+    process_provenienza,
     process_popolazione,
     process_presenze_stay,
     process_strutture,
@@ -84,6 +85,12 @@ PROCESSORS = {
         window,
     ),
 }
+# datasets of a kind with a different processing (same standardized layout as the kind)
+DATASET_PROCESSORS = {
+    "vodafone_provenienza": lambda df, maps, strutture, window, dataset: process_provenienza(
+        df, maps["area_comune"], window
+    ),
+}
 # not processed part by part, see below: the ISPAT presences (alb / extralb) are not normalized and are
 # processed from the raw files; the OD co-visits are yearly indicators, computed on all the days of a year
 # (base + every part of the update)
@@ -93,6 +100,7 @@ PROCESS_ORDER = (
     "popolazione",
     "strutture",
     "vodafone",
+    "vodafone_provenienza",
     "presenze_alb",
     "presenze_extralb",
     "vodafone_covisits",
@@ -198,6 +206,13 @@ def process_update_std_data(
     logger.info("Time window of the update: %s", window)
 
     maps = load_mappings(mapping_dir)
+    if "vodafone_provenienza" in config.datasets:  # areaId -> ID_COMUNE (as for the OD flows)
+        maps = {
+            **maps,
+            "area_comune": covisits_area_comune(
+                mapping_dir, maps["mapping_vodafone"], maps["mapping_comuni"]
+            ),
+        }
     parts = plan_parts(config)
     done = {}  # dataset -> stacked processed frame, filled following PROCESS_ORDER
     beds = None
@@ -238,9 +253,8 @@ def process_update_std_data(
                 if dataset == "vodafone"
                 else None
             )
-            frames.append(
-                PROCESSORS[part.kind](std, maps, strutture, window, part.dataset)
-            )
+            processor = DATASET_PROCESSORS.get(dataset) or PROCESSORS[part.kind]
+            frames.append(processor(std, maps, strutture, window, part.dataset))
         if frames:
             done[dataset] = concat_keep_last(frames, name=dataset)
 

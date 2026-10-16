@@ -87,7 +87,7 @@ def standardize_update_raw_data(
     raw_dir, mapping_dir = Path(raw_dir), Path(mapping_dir)
 
     geojson = None
-    if "vodafone" in config.datasets:
+    if {"vodafone", "vodafone_provenienza"} & set(config.datasets):
         from utils.readers import read_geojson
 
         geojson = read_geojson(mapping_dir / Path(REFERENCES["geojson"]).name)
