@@ -26,6 +26,7 @@ from utils.config import (
 )
 from utils.datasets import (
     COVISITS_RAW_FILE,
+    ENERGY_TOTAL_FILES,
     PRESENZE_BASE_YEARS,
     PRESENZE_FOLDER,
     PRESENZE_MEASURES,
@@ -49,6 +50,7 @@ S3_DATA = [
         for tag in PRESENZE_TAGS.values()
         for measure in PRESENZE_MEASURES
     ),
+    *ENERGY_TOTAL_FILES.values(),  # totale_ee.csv / totale_gas.csv: consumption of all the usage categories
     *(
         f"Energia/{folder}/{filename}"
         for folder in ("ee_prelievi", "gas_prelievi")
@@ -73,12 +75,24 @@ def fetch_bytes(key: str, *, local_dir=None, save_to=None) -> io.BytesIO:
     return buffer
 
 
+def already_downloaded(key: str, target_dir, force=False) -> bool:
+    """True if `key` is already in `target_dir` (non-empty file named as the object): it is NOT downloaded
+    again, unless force=True. This check is done for every file, in the base build and in the update.
+    """
+    target = Path(target_dir) / Path(key).name
+    return not force and target.is_file() and target.stat().st_size > 0
+
+
 # ------------------------------------------------------------------ shared
-def download_mappings(mapping_dir=MAPPING_DIR, local_dir=None) -> None:
+def download_mappings(mapping_dir=MAPPING_DIR, local_dir=None, force=False) -> None:
     """Downloads the reference files (json mappings + geojson, `references` in settings.yaml)
-    into `mapping_dir`. Used by the base build AND by the update."""
+    into `mapping_dir`, skipping the ones already there (force=True: download all).
+    Used by the base build AND by the update."""
     mapping_dir = ensure_dir(mapping_dir)
     for key in REFERENCES.values():
+        if already_downloaded(key, mapping_dir, force):
+            logger.info("Mapping %s already in %s: not downloaded", key, mapping_dir)
+            continue
         logger.info("Downloading mapping %s...", key)
         fetch_bytes(key, local_dir=local_dir, save_to=mapping_dir)
     logger.info("Mappings saved in %s", mapping_dir)
@@ -86,28 +100,36 @@ def download_mappings(mapping_dir=MAPPING_DIR, local_dir=None) -> None:
 
 # ------------------------------------------------------------------ base build
 def download_raw_base_data(
-    out_dir=RAW_DIR, type_format=TYPE_FORMAT, mapping_dir=MAPPING_DIR
+    out_dir=RAW_DIR, type_format=TYPE_FORMAT, mapping_dir=MAPPING_DIR, force=False
 ):
-    """Base build: the historical raw files + the mappings."""
-    from utils.remote import get_dataframe
-
+    """Base build: the historical raw files + the mappings. Files already in raw_data are not downloaded
+    again (force=True downloads everything)."""
     out_dir = ensure_dir(out_dir)
 
     for name in S3_DATA:
-        logger.info("Downloading object %s from S3...", name)
         # The energy folders contain identically named category files; keep their
         # folder names in raw_data so electricity and gas are never overwritten.
-        fetch_bytes(name, save_to=raw_path(name, out_dir).parent)
+        target_dir = raw_path(name, out_dir).parent
+        if already_downloaded(name, target_dir, force):
+            logger.info("Object %s already in %s: not downloaded", name, target_dir)
+            continue
+        logger.info("Downloading object %s from S3...", name)
+        fetch_bytes(name, save_to=target_dir)
 
-    download_mappings(mapping_dir)
+    download_mappings(mapping_dir, force=force)
     logger.info("Raw data saved in %s, mappings in %s", out_dir, mapping_dir)
 
 
 # ------------------------------------------------------------------ update
 def download_update_raw_data(
-    config, out_dir=RAW_DIR, mapping_dir=MAPPING_DIR, local_dir=LOCAL_SOURCE_DIR
+    config,
+    out_dir=RAW_DIR,
+    mapping_dir=MAPPING_DIR,
+    local_dir=LOCAL_SOURCE_DIR,
+    force=False,
 ):
-    """Update: the source files listed in the update config + the mappings.
+    """Update: the source files listed in the update config + the mappings. Files already in raw_data
+    (e.g. downloaded by the base build) are not downloaded again (force=True downloads everything).
     `local_dir` (settings.yaml: update.local_source_dir) reads them from a folder instead of S3.
     """
     from utils.update.spec import load_config
@@ -117,12 +139,19 @@ def download_update_raw_data(
 
     for dataset in config.datasets:
         for src in config.sources[dataset]:
+            target_dir = raw_path(src.file, out_dir).parent
+            if already_downloaded(src.file, target_dir, force):
+                logger.info(
+                    "[%s] %s already in %s: not downloaded",
+                    dataset,
+                    src.file,
+                    target_dir,
+                )
+                continue
             logger.info("[%s] downloading %s...", dataset, src.file)
-            fetch_bytes(
-                src.file, local_dir=local_dir, save_to=raw_path(src.file, out_dir).parent
-            )
+            fetch_bytes(src.file, local_dir=local_dir, save_to=target_dir)
 
-    download_mappings(mapping_dir, local_dir=local_dir)
+    download_mappings(mapping_dir, local_dir=local_dir, force=force)
     logger.info("Update raw data saved in %s, mappings in %s", out_dir, mapping_dir)
 
 

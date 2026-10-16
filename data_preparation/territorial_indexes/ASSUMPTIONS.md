@@ -2,7 +2,8 @@
 
 Register of the decisions (`D*`) and assumptions (`A*`) of the pipeline that builds the phenomenon dataframes:
 `gen_phenomenon_dataframes.py` (base build, "gen") and `update_phenomenon_dataframes.py` (yearly update).
-The steps are described in [METHODOLOGY.md](METHODOLOGY.md). Where a value is configurable the file is named.
+The steps are described in [METHODOLOGY.md](METHODOLOGY.md); **how each phenomenon is computed** is in the section
+[How each phenomenon is computed](#how-each-phenomenon-is-computed). Where a value is configurable the file is named.
 
 Status: **in use** · **to verify** (written without being able to check it against the real files / data lake: confirm
 it before trusting the 2025 numbers) · **retired**.
@@ -13,9 +14,11 @@ it before trusting the 2025 numbers) · **retired**.
 |----|----------|-----------------|-------|--------|
 | D1 | **Nothing before 01/01/2022 is kept**, in the base build and in the update. | Earlier years are discarded (the older strutture were also not comparable, municipal mergers). Applied in step 2 (processing) and again on the final phenomena, so an old `final_data` file cannot bring older rows back. | `config/settings.yaml` `period.start`; `utils/window.py`; `process_std_data.py`; `create_phenomena_df.py` | in use |
 | D2 | **gen (base build) uses data up to 31/12/2024** (included). | Whatever the raw files contain after that date (2025 days of the Vodafone files, 2025 energy, ...) is ignored by the base build and is left to the update. This also removes the warning `[beds_weights] no strutture for 2025: using 2024`: the base build no longer processes 2025 days that have no 2025 strutture. | `period.base_end` | in use |
-| D3 | **update covers 2025 only**, for ALL the phenomena: popolazione, strutture, presenze (Vodafone + ISPAT alb + ISPAT extralb), consumption (electricity + gas), flussi OD. | The processed update files and the rows appended to the base phenomena only contain 2025. Rows of other periods in the update files (e.g. Vodafone 2023–2024, in the same csv) are ignored. An update that finds no data in its window stops with an error (instead of silently appending nothing). | `period.update_start/update_end`; optional `period: {start, end}` in the update yaml (never before `period.start`) | in use |
+| D3 | **update covers 2025 only**: popolazione, strutture, presenze (Vodafone + ISPAT alb + ISPAT extralb), flussi OD and, when its four datasets (`ee_prelievi`, `gas_prelievi`, `ee_totale`, `gas_totale`) are enabled in the update yaml, consumption. In `update_2025.yaml` the energy datasets are `enabled: false` for now (U1). | The processed update files and the rows appended to the base phenomena only contain 2025. Rows of other periods in the update files (e.g. Vodafone 2023–2024, in the same csv) are ignored. An update that finds no data in its window stops with an error (instead of silently appending nothing). | `period.update_start/update_end`; optional `period: {start, end}` in the update yaml (never before `period.start`) | in use |
 | D4 | Yearly data (DATA = `YYYY`: popolazione, strutture, flussi OD) are kept if their **year** is inside the window; daily data by exact date, both ends included. | Window boundaries are whole years in the current settings; with a boundary inside a year a yearly row of that year is kept. | `utils/window.py` | in use |
 | D5 | The update **replaces** rows with the same DATA + ID_COMUNE and **appends** the new ones to the existing phenomena; the earlier rows (2022–2024) are untouched. | Reruns of the update are idempotent. | `create_phenomena_df.append_to_existing` | in use |
+| D6 | **Downloads are never repeated**: step 0 (base build and update, raw files and mappings) skips every object that is already in `raw_data/` / `mapping/` as a non-empty file with the same name. `--force-download` (or `force=True`) overrides it; `--skip-download` skips the whole step. | Avoids downloading again the big files (Vodafone, co-visits) that the base build and the update share (e.g. `vodafone_attendences_new.csv`). A partially written or outdated file is not detected: delete it or use `--force-download`. | `download_data.already_downloaded` | in use |
+| D7 | **gen can also run the 2025 update**: `--with-update` (base build, then the update with `config/updates/update_2025.yaml`) and `--update-only` (only the update, the base build must exist). | One entry point for the full 2022–2025 refresh. The update is the same code and yaml of `update_phenomenon_dataframes.py`, with the same download check (D6). | `gen_phenomenon_dataframes.py` | in use |
 
 ## Base build (gen)
 
@@ -25,18 +28,20 @@ it before trusting the 2025 numbers) · **retired**.
 | A2 | ISPAT arrivals / presences (alb and extralb) are read for **every year of the window** (2022, 2023, 2024): `Presenze/<arrivi\|presenze>_<alb\|exalb>_<year>.csv`. | `PRESENZE_BASE_YEARS` is derived from the window. The 2024 files were in the former update (`update_2025.yaml`); they are now downloaded by the base build. | `datasets.PRESENZE_BASE_YEARS` | to verify |
 | A3 | The 2022 stays that cross the 2021/2022 boundary are approximated (no 2021 files, warning). | Spill-over of the stays uses the previous year's files when present. | `process_presenze_stay` | in use |
 | A4 | Popolazione of year Y is the resident population at 1 January of Y. | `popolazione_ispat_1jan` | `adapters/popolazione.py` | in use |
-| A5 | Strutture: CONV = alberghieri + extralberghieri, NON-CONV = alloggi privati + a disposizione; the totals are recomputed from the components, not read from the raw totals. | Consistency between years / layouts. | `process_strutture` | in use |
+| A5 | Strutture: CONV = alberghieri + extralberghieri; the totals are recomputed from the components, not read from the raw totals: `tot_strutture` / `tot_postiletto` = alberghieri + extralberghieri + alloggi privati (`all. privati`, the "alloggi turistici"). The `all. disposizione` are kept in their own columns (`strutture_alloggi_disp`, `letti_alloggi_disp`) and are **not** in the totals. | Consistency between years / layouts. | `process_strutture` | in use |
 | A6 | Vodafone: only `TOURIST` and `locType = TN_MKT_AL_3` rows; `VIGO DI FASSA` and `POZZA DI FASSA` are unified in `SAN GIOVANNI DI FASSA` (22250). | The comune of Fassa is a merger. | `standardize_vodafone_columns`, `process_vodafone` | in use |
 | A7 | An area that covers several comuni is split **proportionally to the beds** (`tot_postiletto`) of the year; ISPAT alb / extralb are split by `alberghieri` / `extra alb.` beds. Without beds of the year, the nearest year is used (earlier on a tie, warning); without beds at all, uniform split. | Beds are the only supply measure available per comune. Rounding with the largest-remainder method keeps the totals exactly. | `disaggregation.beds_weights` | in use |
 | A8 | ISPAT presences: the monthly arrivals are spread uniformly over the days of the month; a guest who arrives on day d stays `s = presences / arrivals` nights (also across the end of the month); each month is then rescaled to the official monthly presences. | A uniform spread of the presences would ignore the length of stay. | `stay_distribution.py`, `PRESENZE_SPILL_OVER` | in use |
-| A9 | Energy: all usage categories (`codice_utilizzo`) are summed per comune-month, then divided **evenly over the calendar days** of the month. Comuni without an ID are dropped (warning). | Only monthly data are available. | `process_energy` | in use |
+| A9 | Energy (`ee_services`, `gas_services`, `ee_total`, `gas_total`): all the rows of a comune-month (usage categories `codice_utilizzo`) are summed, then divided **evenly over the calendar days** of the month (leap days included). Comuni without an ID are dropped (warning). Same function for the four measures. | Only monthly data are available. | `process_energy` | in use |
 | A10 | Flussi OD: only area-level rows (`TN_MKT_AL_3`), profiles TOURIST and VISITOR, total over the countries (`userCountry` empty). Indicators are yearly per comune; `_combined` columns merge the profiles with **fixed weights, TOURIST 1 and VISITOR 0.5**. An area covering several comuni gives its value to each of them. | Simple and transparent; same weights in base build and update, so years are comparable. 0.5 is a chosen coefficient, not estimated. | `datasets.COVISITS_PROFILE_WEIGHTS`, `flows.build_area_comune`, `process_covisits` | in use |
+
+| A11 | **Energy totals**: `totale_ee.csv` and `totale_gas.csv` (data-lake objects at the top level of the prefix, copied to `raw_data/`) feed the columns `ee_total` and `gas_total`. They are assumed to have the layout of the category files (semicolon csv, `anno`, `comune`, one column per month); the `codice_utilizzo` column is optional (if missing it is filled with `TOTALE`) and **one row per comune and year is assumed**: if a file also contained the single categories next to a grand total, summing the rows (A9) would double count. Units are not converted (as for the services files). A comune/year absent from a file gives an empty value in its column (outer join). | The two files were delivered without a specification and were not available while implementing: the reader accepts both layouts, the content must be checked on the real files. | `standardize_raw_data.read_energy_category`, `standardize_energy_total`, `datasets.ENERGY_TOTAL_FILES` | **to verify** |
 
 ## Update (2025)
 
 | ID | Assumption | Evidence / reason | Where | Status |
 |----|------------|-------------------|-------|--------|
-| U1 | **Energy 2025**: the files of the update have the same layout as the base ones (semicolon csv, year × comune × usage category, one column per month) and are the objects `Energia/<ee_prelievi\|gas_prelievi>/{49_3,55_1,56_1,93_1,96}.csv`; the 2025 rows are read from them (same names as the base files). | The format of the energy update was undefined (placeholder adapter). If the 2025 data arrive in other files, edit the `sources` of `ee_prelievi` / `gas_prelievi` in `config/updates/update_2025.yaml`. | `adapters/energia.py` (`energia_categorie`), `sources.read_energy_csv` | **to verify** |
+| U1 | **Energy 2025**: the files of the update have the same layout as the base ones (semicolon csv, year × comune × usage category, one column per month) and are the objects `Energia/<ee_prelievi\|gas_prelievi>/{49_3,55_1,56_1,93_1,96}.csv` plus `totale_ee.csv` / `totale_gas.csv` (A11); the 2025 rows are read from them (same names as the base files). The four datasets are **disabled** in `update_2025.yaml` (`enabled: false`), and `phen_consumption` needs all four: enable them together once the 2025 rows are confirmed. | The format of the energy update was undefined (placeholder adapter). If the 2025 data arrive in other files, edit the `sources` of `ee_prelievi` / `gas_prelievi` in `config/updates/update_2025.yaml`. | `adapters/energia.py` (`energia_categorie`), `sources.read_energy_csv` | **to verify** |
 | U2 | **Flussi OD 2025**: the 2025 co-visits are in the object `vodafone_covisits.csv` (the same of the base build), read in chunks and filtered to the update period. | The update yaml had no co-visits source. If a separate file is delivered, change `file` in `update_2025.yaml`. | `sources.read_covisits_csv` | **to verify** |
 | U3 | The yearly flow indicators of 2025 are computed on all the 2025 days (base std data of earlier years are not touched); the same fixed profile weights (A10) are used. A partial year (< 360 days) is flagged by `giorni_coperti` and a warning. | Comparability across years. | `process_update_std_data._process_covisits` | in use |
 | U4 | **Presenze 2025**: only the 2025 ISPAT files are in the update yaml; the 2024 files (downloaded by the base build in the same `raw_data` folder) give the stays that cross the new year. If they are missing the stays crossing 31/12/2024 are approximated (warning). | The 2024 sources moved to the base build (A2). | `_process_presenze` | in use |
@@ -44,8 +49,71 @@ it before trusting the 2025 numbers) · **retired**.
 | U6 | Popolazione and strutture of 2025 keep their files and adapters (`popolazione_2026_ISPAT.csv`, `numero_strutture_ISPAT_2025.xlsx`). | unchanged | `update_2025.yaml` | in use |
 | U7 | The base build must have been run (in the same `Output/` folder, same `type_format`) before the update. | The update appends to `final_data`, reads the base normalized strutture / co-visits and the 2024 ISPAT files. | `update_phenomenon_dataframes.py` | in use |
 
-## Not changed / out of scope
+## How each phenomenon is computed
 
-* The two model pipelines (`../model/molveno`, `../model/fazzon`) have their own registers and are not covered here.
-* The raw files and the data lake were not available while making this change: the new window logic is covered by
-  unit tests on synthetic data (`tests/test_period_window.py`), the full pipeline has **not** been run on the real data.
+Every final file (`Output/data/final_data/phen_*`) has `DATA` and `ID_COMUNE` (6 digits, zero-padded ISTAT code) plus the
+value columns below. The window of D1–D4 is applied everywhere. "Where" is the function in `utils/steps/process_std_data.py`
+(`create_phenomena_df.py` for the joins).
+
+### `phen_popolazione` (comune × year)
+* **Source**: ISPAT resident population, file `popolazione_2020_2024.parquet` (base) / `popolazione_2026_ISPAT.csv` (update 2025).
+* **Computation**: `popolazione` = resident population **at 1 January of the year** (A4). The comune name is resolved to its
+  ISTAT id with `mapping_comuni`; rows of the provincia are removed. Nothing is aggregated or disaggregated.
+* **Window**: kept if the year is inside the window (D4). Where: `process_popolazione`.
+
+### `phen_strutture` (comune × year)
+* **Source**: ISPAT accommodation statistics: `Annuario-TavXIII-per-comune-csv.csv` + `strutture_annuario_2024.ods` (base),
+  `numero_strutture_ISPAT_2025.xlsx` (update).
+* **Computation**: for each comune and year, number of structures (`strutture_*`) and beds (`letti_*`) of four types:
+  alberghieri (`alb`), extralberghieri (`exalb`), alloggi privati / turistici, alloggi a disposizione (`disp`).
+  `tot_strutture` = alb + exalb + alloggi turistici and `tot_postiletto` = letti_alb + letti_exalb + letti_alloggi_turistici (A5);
+  the `disp` types are not summed in. The totals of the raw files are discarded and recomputed. `-` is read as 0.
+* **Use**: its beds are the weights of the spatial splits of the presences (A7). Where: `process_strutture`.
+
+### `phen_presenze` (comune × day)
+Three measures, all in presences (guest-nights) per comune and day, joined with an **inner join** on DATA + ID_COMUNE (the dropped records
+are counted in warnings, so the final file only has the days and comuni present in all three).
+* **`presenze_vodafone`** — Vodafone presences of TOURIST profile, level `TN_MKT_AL_3` (A6), per Vodafone area and day
+  (base: `vodafone_attendences` + `vodafone_attendences_new`, the newer wins on common dates, A1). Vigo di Fassa and
+  Pozza di Fassa are unified in San Giovanni di Fassa. An area that is one comune is unchanged; an area with several comuni is
+  **split proportionally to the `tot_postiletto` of the year** of the day (or the nearest year, A7), with the largest-remainder
+  rounding so that the integer sum of each area-day is preserved; the sums are checked and a mismatch stops the run.
+  Where: `process_vodafone`, `disaggregation.disaggregate`.
+* **`presenze_alb`** and **`presenze_xalb`** — ISPAT monthly arrivals and presences of the hotels (alb, per APT, columns
+  `<APT> - Totale`) and of the extra-hotels (exalb, province total), files `Presenze/<arrivi|presenze>_<alb|exalb>_<year>.csv`.
+  1) average stay of the month `s = presences / arrivals`; 2) the arrivals of the month are spread uniformly over its days;
+  3) each arrival adds one presence per day for `s` days (the fractional part on the last day), also across the end of the month and of the year
+  (the files of the previous year give the stays that cross 31/12; if absent they are approximated, A3);
+  4) the daily values of each month are rescaled and rounded (largest remainder) so that they add up exactly to the official monthly
+  presences; 5) the area × day presences are split among the comuni of the area proportionally to the beds of the type
+  (`alberghieri posti_letto` for alb, `extra alb. Posti_letto` for exalb; same year or nearest, A7). The arrivals are not in the output (A8).
+  Where: `process_presenze_stay`, `utils/stay_distribution.py`.
+
+### `phen_consumption` (comune × day)
+Columns `DATA, ID_COMUNE, ee_services, ee_total, gas_services, gas_total`. Four measures, all computed in the same way
+(A9) from monthly values per comune; electricity (`ee_*`) in kWh, gas (`gas_*`) in Smc, as in the source files (no conversion).
+* **`ee_services`, `gas_services`** — withdrawals of the *services* usage categories, files `Energia/ee_prelievi/*.csv` and
+  `Energia/gas_prelievi/*.csv` (one file per category: 49_3, 55_1, 56_1, 93_1, 96, i.e. the ATECO codes 49.3, 55.1, 56.1, 93.1, 96).
+  The rows of all the categories of a comune-month are **summed**.
+* **`ee_total`, `gas_total`** — withdrawals of all the usages, files `totale_ee.csv` / `totale_gas.csv` (A11): the monthly value of the
+  comune (the rows of a comune-month are summed, one is expected).
+* **Monthly → daily**: the monthly value of a comune is **divided evenly over the calendar days** of the month
+  (`value / days in the month`, leap days included), so the sum of the days gives back the month. There is no daily profile: within a month
+  every day has the same value.
+* **Join**: the four daily frames are joined with an **outer join** on DATA + ID_COMUNE (a key missing in a measure has an empty value).
+  Locations without an ISTAT id are excluded with a warning. Where: `_energy_monthly`, `process_energy`, `compute_consumption`.
+
+### `phen_flussi_od` (comune × year)
+* **Source**: Vodafone OD co-visits `vodafone_covisits.csv` (day × source area × target area, `covisitType` ND = users present / UD = users who
+  visit both areas). Kept: area level `TN_MKT_AL_3`, profiles TOURIST and VISITOR, `userCountry` empty (total over the countries) (A10).
+* **Computation, per year and profile**, on user-days summed over the year, with `T(j)` = users present in area j (ND, source `*`):
+  `quota_ingresso` = UD(*→j) / T(j); `quota_uscita` = UD(j→*) / T(j); `quota_intra_ambito` = flow between areas of the same ambito
+  / total flow between areas, on the in + out pairs of the area; `pagerank` = PageRank (damping 0.85) of the directed network of the UD flows between
+  areas. The two mobility shares are empty where `T < 100` raw user-days (`COVISITS_MIN_T`); they can exceed 1 (a user counted in several areas).
+* **Combined profile**: `_combined` columns are computed with the user-days multiplied by the profile weight **before** the indicators
+  (TOURIST 1, VISITOR 0.5): share = Σ w·UD / Σ w·T and PageRank on the weighted network (A10).
+* **Areas → comuni**: an area that covers several comuni gives its value to **all** of them; a comune with several areas gets the weighted mean
+  (weights: T for the two shares, intra-ambito flow for the intra share, in + out flow for the PageRank).
+* `giorni_coperti` = days with data in the year; below 360 the year is partial (kept, warning) (U3). Where: `utils/flows.py`, `process_covisits`.
+
+

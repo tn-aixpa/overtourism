@@ -31,7 +31,7 @@ from utils.config import (
     TYPE_FORMAT,
     setup_logging,
 )
-from utils.datasets import DATASETS, PHENOMENA, phenomena_to_recompute
+from utils.datasets import CONSUMPTION_VALUE_COLS, DATASETS, PHENOMENA, phenomena_to_recompute
 from utils.io import ensure_dir, read_df, save_computed_dfs
 from utils.window import Window, clip
 
@@ -87,11 +87,16 @@ def compute_presenze_trentino(df_alb, df_extralb, df_vodafone):
     return df_mg.sort_values(by=["DATA", "ID_COMUNE"]).reset_index(drop=True)
 
 
-def compute_consumption(df_ee, df_gas):
-    """Combine monthly electricity and gas consumption, retaining keys present in either source."""
+def compute_consumption(df_ee, df_gas, df_ee_total, df_gas_total):
+    """Combine daily electricity and gas consumption (services categories + totals), retaining the keys
+    present in any source. Columns: DATA, ID_COMUNE, ee_services, ee_total, gas_services, gas_total."""
+    keys = ["DATA", "ID_COMUNE"]
+    out = df_ee
+    for df in (df_gas, df_ee_total, df_gas_total):
+        out = out.merge(df, on=keys, how="outer")
     return (
-        df_ee.merge(df_gas, on=["DATA", "ID_COMUNE"], how="outer")
-        .sort_values(["DATA", "ID_COMUNE"])
+        out[keys + CONSUMPTION_VALUE_COLS]
+        .sort_values(keys)
         .reset_index(drop=True)
     )
 
@@ -104,7 +109,7 @@ BUILDERS = {
         pr["presenze_alb"], pr["presenze_extralb"], pr["vodafone"]
     ),
     "phen_consumption": lambda pr: compute_consumption(
-        pr["ee_prelievi"], pr["gas_prelievi"]
+        pr["ee_prelievi"], pr["gas_prelievi"], pr["ee_totale"], pr["gas_totale"]
     ),
     # yearly flow indicators per comune (quota in ingresso / uscita, quota intra-ambito, PageRank)
     "phen_flussi_od": lambda pr: pr["vodafone_covisits"],

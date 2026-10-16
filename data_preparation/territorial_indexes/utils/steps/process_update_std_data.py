@@ -79,7 +79,7 @@ PROCESSORS = {
     "energia": lambda df, maps, strutture, window, dataset: process_energy(
         df,
         maps["mapping_comuni"],
-        (EE_PRELIEVI_VALUE_COLS if dataset == "ee_prelievi" else GAS_PRELIEVI_VALUE_COLS)[0],
+        DATASETS[dataset].value_cols[0],
         dataset,
         window,
     ),
@@ -98,6 +98,8 @@ PROCESS_ORDER = (
     "vodafone_covisits",
     "ee_prelievi",
     "gas_prelievi",
+    "ee_totale",
+    "gas_totale",
 )
 
 

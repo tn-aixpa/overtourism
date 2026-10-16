@@ -6,7 +6,8 @@ Input : Output/data/normalized/   (+ mapping json files, read from Output/mappin
         arrivals / presences are read from Output/data/raw_data/, they are not normalized)
 Output: Output/data/data_processed/   (popolazione_pr, strutture_pr, vodafone_pr,
                                        presenze_alb_pr, presenze_extralb_pr,
-                                       ee_prelievi_pr, gas_prelievi_pr, vodafone_covisits_pr)
+                                       ee_prelievi_pr, gas_prelievi_pr, ee_totale_pr, gas_totale_pr,
+                                       vodafone_covisits_pr)
 
 Transformations: ID_COMUNE resolution, filtering, selection of the columns, computation of
 aggregated columns, disaggregation of the presences to comune x day (vodafone: areas -> comuni by beds;
@@ -60,6 +61,8 @@ from utils.datasets import (  # noqa: F401  (re-exported for convenience)
     PRESENZE_XALB_VALUE_COLS,
     EE_PRELIEVI_VALUE_COLS,
     GAS_PRELIEVI_VALUE_COLS,
+    EE_TOTALE_VALUE_COLS,
+    GAS_TOTALE_VALUE_COLS,
     STRUTTURE_VALUE_COLS,
     VODAFONE_VALUE_COLS,
 )
@@ -532,7 +535,7 @@ def process_data(
         for name, spec in DATASETS.items()
         if spec.normalized
     }
-    for name in ("ee_prelievi", "gas_prelievi", "vodafone_covisits"):  # big
+    for name in ("ee_prelievi", "gas_prelievi", "ee_totale", "gas_totale", "vodafone_covisits"):  # big
         std[name] = clip(std[name], window, name=name)
     maps = load_mappings(mapping_dir)
     mapping_comuni, mapping_vodafone, mapping_apt = (
@@ -586,6 +589,12 @@ def process_data(
         "gas_prelievi",
         window,
     )
+    ee_total_pr = process_energy(
+        std["ee_totale"], mapping_comuni, EE_TOTALE_VALUE_COLS[0], "ee_totale", window
+    )
+    gas_total_pr = process_energy(
+        std["gas_totale"], mapping_comuni, GAS_TOTALE_VALUE_COLS[0], "gas_totale", window
+    )
     area_comune = covisits_area_comune(mapping_dir, mapping_vodafone, mapping_comuni)
     covisits_pr = process_covisits(std["vodafone_covisits"], area_comune, window)
     dict_processed = {
@@ -598,6 +607,8 @@ def process_data(
         "presenze_extralb_pr": extralb_pr,
         DATASETS["ee_prelievi"].processed_name: ee_pr,
         DATASETS["gas_prelievi"].processed_name: gas_pr,
+        DATASETS["ee_totale"].processed_name: ee_total_pr,
+        DATASETS["gas_totale"].processed_name: gas_total_pr,
         DATASETS["vodafone_covisits"].processed_name: covisits_pr,
     }
 

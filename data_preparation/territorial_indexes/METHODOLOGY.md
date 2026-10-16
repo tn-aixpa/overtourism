@@ -23,16 +23,20 @@ time in step 3 on the final phenomena. Yearly data are kept by year, daily data 
 ## Step 0 – Download
 
 Raw files are copied exactly as they are from the data lake (or from `update.local_source_dir`) to `raw_data/`;
-the json mappings and the geojson of the areas go to `mapping/`. The base build downloads: popolazione 2020–2024,
+the json mappings and the geojson of the areas go to `mapping/`. **A file already present (non-empty) in `raw_data/`
+or `mapping/` is never downloaded again** (checked file by file in the base build and in the update, D6);
+`--force-download` downloads everything again. The base build downloads: popolazione 2020–2024,
 strutture (Annuario csv + 2024 ods), Vodafone presences (`vodafone_attendences` + `_new`, A1), Vodafone OD co-visits,
-the ISPAT arrivals / presences 2022–2024 (A2), the energy category files. The update downloads the files listed in its
+the ISPAT arrivals / presences 2022–2024 (A2), the energy category files and the two energy total files
+`totale_ee.csv` / `totale_gas.csv` (A11). The update downloads the files listed in its
 yaml (`config/updates/update_2025.yaml`). Energy files keep their folder (`ee_prelievi/`, `gas_prelievi/`) because the
 two carriers have identically named files.
 
 ## Step 1 – Standardization (`<dataset>_std`)
 
 Uniform names and format, **no filtering and no aggregation**: columns `DATA` / `LOCATION`, comune names cleaned,
-Vodafone area ids converted to names (Vigo + Pozza di Fassa → San Giovanni di Fassa), energy categories stacked,
+Vodafone area ids converted to names (Vigo + Pozza di Fassa → San Giovanni di Fassa), energy categories stacked
+(`ee_prelievi`, `gas_prelievi`; the total files `ee_totale`, `gas_totale` are read one by one),
 OD co-visits reduced to what the indicators use (area level, TOURIST / VISITOR, total over the countries; read in chunks).
 In the update every source first goes through its **adapter**, which checks the layout (a mismatch stops the run)
 and renames the columns to the standard ones; then the same standardization functions of the base build are applied.
@@ -49,7 +53,8 @@ Every output has `DATA` and `ID_COMUNE` (6 digits, one comune per row) plus the 
 | strutture | comune × year | beds and structures, conventional (alb + extralb) and not; totals recomputed (A5) |
 | vodafone | comune × day | TOURIST presences per area × day; areas with several comuni split by beds of the year (A7); sums checked after the split |
 | presenze_alb / presenze_extralb | comune × day | ISPAT monthly arrivals and presences per APT / province → daily presences through the average length of stay (A8), then split among comuni by `alberghieri` / `extra alb.` beds; each month adds up exactly to the official figure |
-| ee_prelievi / gas_prelievi | comune × day | categories summed per comune-month, spread evenly over the days (A9) |
+| ee_prelievi / gas_prelievi | comune × day | categories summed per comune-month, spread evenly over the days (A9); column `ee_services` / `gas_services` |
+| ee_totale / gas_totale | comune × day | total files: same treatment (A9, A11); column `ee_total` / `gas_total` |
 | vodafone_covisits | comune × year | flow indicators: share of incoming and outgoing users, share of intra-ambito flow, PageRank, for TOURIST, VISITOR and a weighted `_combined`; `giorni_coperti` = days with data (A10) |
 
 Presences and beds: for a day, the beds of its year are used; if the year is missing the nearest one (with a warning).
@@ -72,21 +77,24 @@ to the year of the update.
 | `phen_popolazione` | popolazione | as is |
 | `phen_strutture` | strutture | as is |
 | `phen_presenze` | vodafone, presenze_alb, presenze_extralb | **inner join** on DATA + ID_COMUNE; the dropped records (e.g. days not covered by Vodafone) are counted in warnings |
-| `phen_consumption` | ee_prelievi, gas_prelievi | outer join on DATA + ID_COMUNE |
+| `phen_consumption` | ee_prelievi, gas_prelievi, ee_totale, gas_totale | outer join on DATA + ID_COMUNE; columns `DATA, ID_COMUNE, ee_services, ee_total, gas_services, gas_total` |
 | `phen_flussi_od` | vodafone_covisits | as is |
 
 * **gen**: the phenomena are created from the `_pr` files and cut to 2022-01-01 .. 2024-12-31.
-* **update**: a phenomenon is recomputed only if **all** its input datasets are in the update (hence all the datasets
-  of the 2025 yaml); the new rows are appended to the existing file (the update wins on a duplicated key, D5), and the
+* **update**: a phenomenon is recomputed only if **all** its input datasets are in the update (the datasets enabled in
+  the 2025 yaml; the four energy ones are currently disabled, so `phen_consumption` is not appended, see U1); the new rows are appended to the existing file (the update wins on a duplicated key, D5), and the
   result is cut to `period.start` .. end of the update window. `--upload` also logs the phenomena to the platform.
+
+How each value is obtained, phenomenon by phenomenon, is in [ASSUMPTIONS.md](ASSUMPTIONS.md#how-each-phenomenon-is-computed).
 
 ## Running
 
 ```
-python -m gen_phenomenon_dataframes [--skip-download] [--upload]
-python -m update_phenomenon_dataframes --config config/updates/update_2025.yaml [--skip-download] [--upload]
+python -m gen_phenomenon_dataframes [--with-update | --update-only] [--skip-download] [--force-download] [--upload]
+python -m update_phenomenon_dataframes --config config/updates/update_2025.yaml [--skip-download] [--force-download] [--upload]
 ```
 
+`--with-update` runs the base build and then the 2025 update; `--update-only` runs only the 2025 update.
 Run from `territorial_indexes/`. Run gen first (same `Output/`, same `type_format`), then the update. To move the window edit `period` in
 `config/settings.yaml` (or add `period: {start, end}` to the update yaml); to update a new year write a new yaml.
 Tests: `python -m pytest tests` (from `territorial_indexes/`).

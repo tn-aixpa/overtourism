@@ -29,7 +29,16 @@ PRESENZE_ALB_VALUE_COLS = ["presenze_alb"]
 PRESENZE_XALB_VALUE_COLS = ["presenze_xalb"]
 EE_PRELIEVI_VALUE_COLS = ["ee_services"]
 GAS_PRELIEVI_VALUE_COLS = ["gas_services"]
-
+# "totale" files: withdrawals of ALL the usage categories (not only the services ones above)
+EE_TOTALE_VALUE_COLS = ["ee_total"]
+GAS_TOTALE_VALUE_COLS = ["gas_total"]
+# Final column order of `phen_consumption` (after DATA, ID_COMUNE)
+CONSUMPTION_VALUE_COLS = ["ee_services", "ee_total", "gas_services", "gas_total"]
+# Raw files of the totals: data-lake objects (at the top of the prefix) = names in raw_data
+ENERGY_TOTAL_FILES = {
+    "ee_totale": "Energia/ee_prelievi/totale_ee.csv",
+    "gas_totale": "Energia/gas_prelievi/totale_gas.csv",
+}
 # Vodafone OD co-visits (flows between areas) -> yearly flow indicators per comune, see utils/flows.py.
 # One column per metric and profile (`<metric>_<profile in lower case>`), plus the days covered by the year
 COVISITS_RAW_FILE = (
@@ -121,6 +130,8 @@ DATASETS = {
         _spec("vodafone", VODAFONE_VALUE_COLS, [REF_MAPPING_VODAFONE, REF_GEOJSON]),
         _spec("ee_prelievi", EE_PRELIEVI_VALUE_COLS, [REF_MAPPING_COMUNI]),
         _spec("gas_prelievi", GAS_PRELIEVI_VALUE_COLS, [REF_MAPPING_COMUNI]),
+        _spec("ee_totale", EE_TOTALE_VALUE_COLS, [REF_MAPPING_COMUNI]),
+        _spec("gas_totale", GAS_TOTALE_VALUE_COLS, [REF_MAPPING_COMUNI]),
         _spec(
             "vodafone_covisits",
             COVISITS_VALUE_COLS,

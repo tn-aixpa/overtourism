@@ -77,7 +77,7 @@ KIND_DATASETS = {
     "vodafone": {"vodafone"},
     "presenze_raw": {"presenze_alb", "presenze_extralb"},
     "vodafone_covisits": {"vodafone_covisits"},
-    "energia": {"ee_prelievi", "gas_prelievi"},
+    "energia": {"ee_prelievi", "gas_prelievi", "ee_totale", "gas_totale"},
 }
 
 

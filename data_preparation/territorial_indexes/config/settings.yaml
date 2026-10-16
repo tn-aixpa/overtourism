@@ -66,6 +66,14 @@ datasets:
     std: gas_prelievi_std
     processed: gas_prelievi_pr
     update: gas_prelievi_update_pr
+  ee_totale:
+    std: ee_totale_std
+    processed: ee_totale_pr
+    update: ee_totale_update_pr
+  gas_totale:
+    std: gas_totale_std
+    processed: gas_totale_pr
+    update: gas_totale_update_pr
   vodafone_covisits:
     std: vodafone_covisits_std
     processed: vodafone_covisits_pr
@@ -75,7 +83,7 @@ phenomena:
   phen_popolazione: [popolazione]
   phen_strutture: [strutture]
   phen_presenze: [vodafone, presenze_alb, presenze_extralb]
-  phen_consumption: [ee_prelievi, gas_prelievi]
+  phen_consumption: [ee_prelievi, gas_prelievi, ee_totale, gas_totale]
   phen_flussi_od: [vodafone_covisits]
 
 # Data lake / platform

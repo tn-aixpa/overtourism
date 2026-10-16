@@ -1,7 +1,8 @@
 # Territorial indexes: data preparation pipeline
 
 Builds the phenomenon dataframes (`phen_popolazione`, `phen_strutture`, `phen_presenze`, `phen_consumption`,
-`phen_flussi_od`) behind the territorial indexes: a **base build** (gen) and a **yearly update**. Part of
+`phen_flussi_od`) behind the territorial indexes: a **base build** (gen) and a **yearly update**
+(gen can also run the update of 2025 only, see [Running](#running-gen-and-the-2025-update)). Part of
 `data_preparation/` (see its [README](../README.md)); the model pipelines live in `../model/`. All commands below are run
 from this folder (`territorial_indexes/`).
 
@@ -17,14 +18,18 @@ Every step reads the output of the previous one. **Directories, file format and 
 `config/settings.yaml`** (the only file to edit for them; neither script takes directories as arguments).
 `type_format` (`parquet` by default) applies to every file, in the base build and in the update.
 
-**Time window**: gen = 2022-01-01 .. 2024-12-31, update 2025 = 2025 only, nothing before 2022 (`period` in `config/settings.yaml`). Steps: [METHODOLOGY.md](METHODOLOGY.md); decisions and assumptions: [ASSUMPTIONS.md](ASSUMPTIONS.md).
+**Time window**: gen = 2022-01-01 .. 2024-12-31, update 2025 = 2025 only, nothing before 2022 (`period` in `config/settings.yaml`). Steps: [METHODOLOGY.md](METHODOLOGY.md); decisions, assumptions and **how every phenomenon is computed**: [ASSUMPTIONS.md](ASSUMPTIONS.md).
+
+**Downloads are never repeated**: in the base build and in the update, step 0 checks file by file whether the object is
+already in `Output/data/raw_data/` (or `Output/mapping/`) and, if so, does not download it (`--force-download` overrides
+the check). `--skip-download` skips step 0 altogether.
 
 ## Layout
 
 ```
 territorial_indexes/
 ├── README.md, METHODOLOGY.md, ASSUMPTIONS.md
-├── gen_phenomenon_dataframes.py     # entry point: base build, ALL steps (download -> final parquet)
+├── gen_phenomenon_dataframes.py     # entry point: base build, ALL steps (download -> final parquet); --with-update / --update-only: also the 2025 update
 ├── update_phenomenon_dataframes.py  # entry point: yearly update
 ├── config/
 │   ├── settings.yaml                     # directories, file format, period, platform (edit here)
@@ -52,7 +57,7 @@ Runs all the steps, from the download to the final files:
 
 | Step | Module | Input | Output |
 |------|--------|-------|--------|
-| 0 Download | `utils/steps/download_data.py` (`download_raw_base_data`) | server (S3) | `Output/data/raw_data/` |
+| 0 Download | `utils/steps/download_data.py` (`download_raw_base_data`) | server (S3); files already in raw_data are skipped | `Output/data/raw_data/` |
 | 1 Standardization | `utils/steps/standardize_raw_data.py` | raw_data | `Output/data/normalized/` |
 | 2 Processing | `utils/steps/process_std_data.py` | normalized (+ mappings in `Output/mapping`) | `Output/data/data_processed/` |
 | 3 Phenomena | `utils/steps/create_phenomena_df.py` | data_processed | `Output/data/final_data/` (+ platform with `--upload`) |
@@ -60,7 +65,7 @@ Runs all the steps, from the download to the final files:
 * **Download** saves data as they arrive: no renaming, no normalization. The mappings go to `Output/mapping/`, not to raw_data. The 2024 strutture ODS is part of the base build; later annual strutture files remain update inputs.
 * **Standardization** uniforms column names, `DATA`/`LOCATION` schema, dates and comune names (no filtering/aggregation).
   Output: `popolazione_std`, `strutture_std`, `vodafone_std`, `ee_prelievi_std`, `gas_prelievi_std`,
-  `vodafone_covisits_std`.
+  `ee_totale_std`, `gas_totale_std`, `vodafone_covisits_std`.
   The ISPAT arrivals / presences (alb, extralb) are **not normalized**. Electricity and gas category CSVs
   from `Energia/ee_prelievi/` and `Energia/gas_prelievi/` are each stacked into one normalized file;
   category rows remain separate at this step.
@@ -81,11 +86,14 @@ Runs all the steps, from the download to the final files:
   Every vodafone / ISPAT step checks that summing back gives the original totals.
   `vodafone_covisits` (OD co-visits between Vodafone areas) is aggregated **per year** into flow indicators, see below.
 * **Phenomena**: `phen_popolazione`, `phen_strutture`, `phen_presenze` (alb + xalb + vodafone unified).
-  `phen_consumption` contains daily municipality usage in `ee_services` (kWh) and `gas_services` (Smc).
-  Categories are summed to monthly totals during processing, then each monthly total is divided evenly
-  across the calendar days in that month (including leap days). The two measures are combined on `DATA`
-  + `ID_COMUNE`. In the update they are read with the `energy_csv` reader and the `energia_categorie` adapter
-  (same layout as the base files, see `utils/adapters/energia.py` and assumption U1 in `ASSUMPTIONS.md`).
+  `phen_consumption` has the columns `DATA`, `ID_COMUNE`, `ee_services`, `ee_total`, `gas_services`, `gas_total`
+  (daily consumption per comune; electricity in kWh, gas in Smc). `*_services` come from the category files
+  (`Energia/<ee_prelievi|gas_prelievi>/*.csv`, tourism-related usage categories summed); `*_total` come from the two
+  files `totale_ee.csv` and `totale_gas.csv` (all the usages). For each of the four measures the monthly value of a
+  comune is divided evenly across the calendar days of the month (including leap days) and the four are combined
+  on `DATA` + `ID_COMUNE` (outer join). In the update they are read with the `energy_csv` reader and the
+  `energia_categorie` adapter (same layout as the base files, see `utils/adapters/energia.py` and assumptions
+  U1 / A11 in `ASSUMPTIONS.md`).
 * **Flow indicators** (`phen_flussi_od`): see the next section.
 
 ### Flow indicators (`vodafone_covisits` -> `phen_flussi_od`)
@@ -134,12 +142,21 @@ the base build and the update to recompute the `_combined` columns.
 **Areas -> comuni.** An area that covers several comuni passes its value to **all** of them (`flows.build_area_comune`
 keeps every (area, comune) pair); a comune with several areas gets the weighted mean.
 
+### Running gen and the 2025 update
+
 ```bash
-python -m gen_phenomenon_dataframes                   # all steps, parquet
-python -m gen_phenomenon_dataframes --skip-download   # reuse Output/data/raw_data
+python -m gen_phenomenon_dataframes                   # base build 2022-2024, all steps, parquet
+python -m gen_phenomenon_dataframes --with-update     # base build, then the update of 2025 only (appended)
+python -m gen_phenomenon_dataframes --update-only     # ONLY the update of 2025 (the base build must already exist)
+python -m gen_phenomenon_dataframes --update-config config/updates/update_2025.yaml   # yaml used by the two options above (default)
+python -m gen_phenomenon_dataframes --skip-download   # reuse Output/data/raw_data, step 0 not run
+python -m gen_phenomenon_dataframes --force-download  # download again also the files already in raw_data
 python -m gen_phenomenon_dataframes --upload          # also log final data to the platform
 ```
-Each step can also be run alone, e.g. `python -m utils.steps.process_std_data`.
+In every mode the download step skips the files already in `raw_data` (e.g. `vodafone_attendences_new.csv`, read by the
+base build and by the 2025 update, is downloaded once). Each step can also be run alone, e.g.
+`python -m utils.steps.process_std_data`. From Python: `main_compute_phenomena_dfs(with_update=True)` or
+`run_update_2025()`.
 
 ## Yearly update: `update_phenomenon_dataframes.py`
 
@@ -147,14 +164,15 @@ Same steps of the base build, with update-specific versions of standardize and p
 
 | Step | Module | Input | Output |
 |------|--------|-------|--------|
-| 0 Download | `utils/steps/download_data.py` (`download_update_raw_data`) | server (S3) or `update.local_source_dir` | `Output/data/raw_data/` + `Output/mapping/` |
+| 0 Download | `utils/steps/download_data.py` (`download_update_raw_data`) | server (S3) or `update.local_source_dir`; files already in raw_data are skipped | `Output/data/raw_data/` + `Output/mapping/` |
 | 1 Standardization | `utils/steps/standardize_update_raw_data.py` | raw_data | `Output/data/normalized/<dataset>_update_std` |
 | 2 Processing | `utils/steps/process_update_std_data.py` | normalized (+ mappings) | `Output/data/data_processed/<dataset>_update_pr` |
 | 3 Phenomena | `utils/steps/create_phenomena_df.py` (`datasets=[...]`) | `<dataset>_update_pr` + existing `final_data` | `Output/data/final_data/` (appended) |
 
 * **Download**: `download_raw_base_data` and `download_update_raw_data` live in the same module and share
   `download_mappings`: the mapping json files and the geojson go to `Output/mapping/` in both cases.
-  The update downloads the files listed in the update config.
+  The update downloads the files listed in the update config, except the ones already in `raw_data` (checked file by file;
+  `--force-download` downloads them again).
 * **Standardization**: for each source it first **checks that the column structure is compatible with the
   expected one** (the adapter of the source, then the columns required by its kind, `KIND_SCHEMAS`), renames the
   columns to the standard names, and applies **the same standardize functions of the base build**.
@@ -165,12 +183,17 @@ Same steps of the base build, with update-specific versions of standardize and p
 * **Phenomena**: `compute_phenomena` creates the phenomenon dataframes in the base build; in the update it
   **appends** the new ones to the existing files in `final_data`. On a duplicated `DATA` + `ID_COMUNE` the
   update row is kept. A phenomenon is computed only if **all** its datasets are in the update
-  (`phen_presenze` needs `vodafone`, `presenze_alb` and `presenze_extralb`); the others are skipped with a warning.
-  The final data of the base build must already exist.
+  (`phen_presenze` needs `vodafone`, `presenze_alb` and `presenze_extralb`; `phen_consumption` needs `ee_prelievi`,
+  `gas_prelievi`, `ee_totale` and `gas_totale`); the others are skipped with a warning. In `update_2025.yaml` the four
+  energy datasets are `enabled: false` for now (no 2025 energy files confirmed, U1 / A11), so `phen_consumption` is
+  not appended by the 2025 update until they are enabled together.
+  The final data of the base build must already exist (and it must have the same columns: after the addition of
+  `ee_total` / `gas_total` the base build has to be rerun once).
 
 ```bash
 python -m update_phenomenon_dataframes --config config/updates/update_2026.yaml
 python -m update_phenomenon_dataframes --config ... --skip-download   # reuse raw_data and mappings
+python -m update_phenomenon_dataframes --config ... --force-download  # download again the files already in raw_data
 python -m update_phenomenon_dataframes --config ... --upload          # also log final data to the platform
 ```
 To read source files from a local folder instead of S3 set `update.local_source_dir` in `settings.yaml`.
@@ -211,7 +234,8 @@ profile weights, 2024 ISPAT files), see `ASSUMPTIONS.md` (U1–U7).
 
 Update files are kept next to the base ones: raw sources in `raw_data`, `<dataset>_update_std` in `normalized`,
 `<dataset>_update_pr` in `data_processed` (the base `<dataset>_pr` are **not** modified), and the final
-phenomenon files (`phen_popolazione`, `phen_strutture`, `phen_presenze`, `phen_flussi_od`) in `final_data`, with the update rows appended.
+phenomenon files (`phen_popolazione`, `phen_strutture`, `phen_presenze`, `phen_consumption`, `phen_flussi_od`) in
+`final_data`, with the update rows appended (only for the phenomena whose datasets are all in the update).
 
 ### Strutture and popolazione
 
@@ -222,7 +246,8 @@ phenomenon files (`phen_popolazione`, `phen_strutture`, `phen_presenze`, `phen_f
   columns (`Alloggi turistici` → `all. privati`, `Alloggi a disposizione` → `all. disposizione`,
   `Totale` → `tot convenzionali`) and converts `-` to 0. In processed data (base and update) the raw
   `tot convenzionali strutture / posti_letto` are **discarded**: conv is recomputed as alberghieri + extralberghieri,
-  total = conv + non conv (`all. privati`).
+  total = conv + `all. privati` (the `all. disposizione` are kept as separate columns but are not part of the totals,
+  see A5).
 * **popolazione**: the value is the column `Popolazione residente al 1.1.<year>` (`year: 2025` → second column of the file).
 
 ### A new year arrives

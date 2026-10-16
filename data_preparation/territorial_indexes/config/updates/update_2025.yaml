@@ -3,8 +3,8 @@
 # This update covers 2025 ONLY: the base build (gen_phenomenon_dataframes.py) goes from 2022-01-01 to 2024-12-31.
 # Every dataset below is restricted to the period of the update (`period.update_*` of settings.yaml, or the optional
 # `period: {start: ..., end: ...}` here, never before `period.start`): rows of other periods in the files are ignored.
-# ALL the phenomena are updated: presenze (vodafone + alb + extralb), popolazione, strutture, consumption (ee + gas)
-# and flussi OD. See ASSUMPTIONS.md (U1..U6) for the assumptions about the files of the update.
+# Updated: presenze (vodafone + alb + extralb), popolazione, strutture and flussi OD. Consumption (ee/gas services + totals)
+# is DISABLED for now: phen_consumption needs the 4 energy datasets together (ee_prelievi, gas_prelievi, ee_totale, gas_totale). See ASSUMPTIONS.md (U1..U7) for the assumptions about the files of the update.
 
 datasets:
   popolazione:
@@ -75,6 +75,16 @@ datasets:
       - {file: Energia/gas_prelievi/56_1.csv, reader: energy_csv, adapter: energia_categorie}
       - {file: Energia/gas_prelievi/93_1.csv, reader: energy_csv, adapter: energia_categorie}
       - {file: Energia/gas_prelievi/96.csv, reader: energy_csv, adapter: energia_categorie}
+
+  ee_totale:
+    enabled: false         # totals of all the usage categories (same layout of the category files, no codice_utilizzo needed)
+    sources:
+      - {file: Energia/totale_ee.csv, reader: energy_csv, adapter: energia_categorie}
+
+  gas_totale:
+    enabled: false
+    sources:
+      - {file: Energia/totale_gas.csv, reader: energy_csv, adapter: energia_categorie}
 
   vodafone_covisits:
     enabled: true

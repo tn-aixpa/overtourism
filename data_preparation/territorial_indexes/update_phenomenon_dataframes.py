@@ -43,11 +43,17 @@ logger = logging.getLogger(__name__)
 
 
 def update_pipeline(
-    config, type_format=TYPE_FORMAT, local=True, skip_download=False, strict=True
+    config,
+    type_format=TYPE_FORMAT,
+    local=True,
+    skip_download=False,
+    strict=True,
+    force_download=False,
 ):
     """Runs the whole update and returns the final phenomenon dataframes (existing + update).
     local=False also uploads them to the platform;
     skip_download=True reuses the raw data and the mappings already in Output/;
+    the download step never fetches a file already in raw_data (force_download=True fetches all);
     strict=False: adapter schema mismatch -> warning instead of error."""
     config = load_config(config)
     logger.info("Update of %s", config.datasets)
@@ -56,7 +62,7 @@ def update_pipeline(
         logger.info("Step 0/3: download skipped, using the existing raw data")
     else:
         logger.info("Step 0/3: download update raw data")
-        download_update_raw_data(config)
+        download_update_raw_data(config, force=force_download)
     logger.info("Step 1/3: standardize update raw data")
     standardize_update_raw_data(config, type_format=type_format, strict=strict)
     logger.info("Step 2/3: process standardized update data")
@@ -85,6 +91,11 @@ def _parse_args(argv=None):
         help="reuse the raw data already downloaded",
     )
     p.add_argument(
+        "--force-download",
+        action="store_true",
+        help="download again the files already in raw_data (by default they are skipped)",
+    )
+    p.add_argument(
         "--upload",
         action="store_true",
         help="log the final phenomena to the platform too",
@@ -105,6 +116,7 @@ def main(argv=None) -> int:
         local=not args.upload,
         skip_download=args.skip_download,
         strict=not args.no_strict,
+        force_download=args.force_download,
     )
     return 0
 
