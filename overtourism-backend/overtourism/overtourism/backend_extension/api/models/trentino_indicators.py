@@ -7,6 +7,7 @@ import pandas as pd
 from overtourism.overtourism.backend_extension.api.models.indicator import Indicator
 from overtourism.overtourism.backend_extension.api.models.trenitno_phenomena import (
     BedsPhenomenon,
+    ConsumptionPhenomenon,
     FacilitiesTotalPhenomenon,
     FlowIndicatorPhenomenon,
     PopulationPhenomenon,
@@ -30,6 +31,9 @@ FLOWS_OD_SOURCE = (
 PROVENIENZA_SOURCE = (
     index_data_path / "phen_provenienza.parquet"
 )  # yearly concentration (normalized HHI) of the source markets per comune
+CONSUMPTION_SOURCE = (
+    index_data_path / "phen_consumption.parquet"
+)  # daily electricity / gas consumption per comune (services and total)
 MACRO_AREAS_FILE = index_data_path / "map_comuni_into_apt.json"
 CODICI_COMUNI_FILE = index_data_path / "mapping_comuni_ISTAT.json"
 
@@ -84,6 +88,12 @@ _REGISTRY: dict[str, Callable[[], Indicator]] = {
     ),
     "concentrazione-mercati-provenienza": lambda: SourceMarketsConcentrationIndicator(
         PROVENIENZA_SOURCE
+    ),
+    "impatto-turismo-consumi-elettrici": lambda: TourismElectricityConsumptionImpactIndicator(
+        CONSUMPTION_SOURCE
+    ),
+    "impatto-turismo-consumi-gas": lambda: TourismGasConsumptionImpactIndicator(
+        CONSUMPTION_SOURCE
     ),
     _VARIATION_RATE_KEY: lambda: VariationRateIndicator(),
     _PERIOD_PERCENTAGE_IMPACT_KEY: lambda: PeriodPercentageImpactIndicator(),
@@ -511,6 +521,68 @@ class SourceMarketsConcentrationIndicator(Indicator):
     @staticmethod
     def _hhi(df: pd.DataFrame, **_extra) -> pd.Series:
         return df["hhi_provenienza"]
+
+
+# ---------------------------------------------------------------------------
+# Consumption indicators (impact of tourism on electricity / gas consumption)
+# ---------------------------------------------------------------------------
+# They read `phen_consumption`: one row per comune and DAY with the electricity (`ee_*`) and gas (`gas_*`)
+# consumption of the services sector (`*_services`, the one driven by tourism) and of all sectors (`*_total`).
+# The indicator is the share of the services consumption over the total one, computed on the averages of the
+# requested window. Null values are treated as zeros.
+
+
+class _ConsumptionImpactIndicator(Indicator):
+    """Base: share of the services consumption over the total consumption (nulls = 0)."""
+
+    services_column: str = ""
+    total_column: str = ""
+    type = INDICATORS_TYPES[1]
+    index_value_unit_description = (
+        "Rapporto fra consumi del settore servizi e consumi totali"
+    )
+
+    def __init__(self, source_file):
+        super().__init__(
+            phenomena=[
+                ConsumptionPhenomenon(source_file, col, name=col)
+                for col in (self.services_column, self.total_column)
+            ],
+            combinator=self._services_share,
+        )
+
+    def _services_share(self, df: pd.DataFrame, **_extra) -> pd.Series:
+        services = df[self.services_column].fillna(0)
+        total = df[self.total_column].fillna(0)
+        return services.div(total.where(total != 0))
+
+
+class TourismElectricityConsumptionImpactIndicator(_ConsumptionImpactIndicator):
+    """Electricity consumption of the services sector over the total electricity consumption."""
+
+    name = "Impatto turismo sui consumi elettrici"
+    description = (
+        "L'indice misura l'impatto del turismo sui consumi elettrici come <strong>rapporto</strong> fra i "
+        "<strong>consumi elettrici del settore servizi</strong> e i <strong>consumi elettrici totali</strong> "
+        "dell'area. Valori alti indicano un'area in cui i consumi sono dominati dalle attività legate ai servizi "
+        "e quindi al turismo. I valori mancanti sono considerati pari a zero."
+    )
+    services_column = "ee_services"
+    total_column = "ee_total"
+
+
+class TourismGasConsumptionImpactIndicator(_ConsumptionImpactIndicator):
+    """Gas consumption of the services sector over the total gas consumption."""
+
+    name = "Impatto turismo sui consumi di gas"
+    description = (
+        "L'indice misura l'impatto del turismo sui consumi di gas come <strong>rapporto</strong> fra i "
+        "<strong>consumi di gas del settore servizi</strong> e i <strong>consumi di gas totali</strong> "
+        "dell'area. Valori alti indicano un'area in cui i consumi sono dominati dalle attività legate ai servizi "
+        "e quindi al turismo. I valori mancanti sono considerati pari a zero."
+    )
+    services_column = "gas_services"
+    total_column = "gas_total"
 
 
 class VariationRateIndicator(Indicator):

@@ -63,6 +63,11 @@ PHENOMENON_LABELS_IT: dict[str, str] = {
     # The label contains "quota" on purpose: index_utils rounds the columns with "quota" / "PageRank" in their
     # label to decimals (an index in [0, 1] must not be rounded to an integer).
     "hhi_provenienza": "quota di concentrazione dei mercati (HHI normalizzato)",
+    # Consumption indicators (phen_consumption): daily electricity / gas consumption, services vs total
+    "ee_services": "consumi elettrici servizi",
+    "ee_total": "consumi elettrici totali",
+    "gas_services": "consumi gas servizi",
+    "gas_total": "consumi gas totali",
 }
 
 # ---------------------------------------------------------------------------
@@ -146,6 +151,23 @@ class ExtraFacilitiesPhenomenon(Phenomenon):
         super().__init__(source, col, agg="mean")
         if name is not None:
             self.name = name
+
+
+class ConsumptionPhenomenon(Phenomenon):
+    """
+    One column of ``phen_consumption`` (``ee_services``, ``ee_total``, ``gas_services``, ``gas_total``):
+    daily energy / gas consumption per comune. Nulls are treated as zeros by the indicators that use it.
+    """
+
+    name = "consumption"
+    temporal_resolution = "daily"
+    temporal_strategy = "identity"
+    spatial_resolution = "comune"
+    spatial_strategy = "identity"
+
+    def __init__(self, source, col, name=None):
+        super().__init__(source, col, agg="mean", municipality_id_col="ID_COMUNE")
+        self.name = name or col
 
 
 class PopulationPhenomenon(Phenomenon):
