@@ -264,7 +264,7 @@ class AvailableAccommodationBedsIndicator(_HospitalityBedsShareIndicator):
 class HiddenTourismIndicator(Indicator):
     """Calculates the hidden tourism indicator as the ratio between Vodafone registered attendences and accomodancy ones"""
 
-    name = "Indice di turismo sommerso"
+    name = "Turismo non intercettato"
     type = INDICATORS_TYPES[0]
     description = "L'indice misura il <strong>rapporto</strong> fra le <strong>presenze di turisti misurate</strong> attraverso l'analisi di dati da rete di telefonia mobile e le <strong>presenze ufficiali</strong> di turisti in strutture alberghiere e extra-alberghiere. L'indice è stato calcolato partendo dai dati ISPAT sul movimento turistico e dai dati Vodafone relativi alle presenze misurate."
     index_value_unit_description = "Rapporto fra presenze misurate e ufficiali"
