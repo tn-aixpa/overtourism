@@ -48,9 +48,14 @@ def compute_presenze_trentino(df_alb, df_extralb, df_vodafone):
 
     len_pre = len(df)
     df_mg = df.merge(
-        df_vodafone[["DATA", "ID_COMUNE", "presenze"]].rename(
-            columns={"presenze": "presenze_vodafone"}
-        ),
+        df_vodafone[
+            [
+                "DATA",
+                "ID_COMUNE",
+                "presenze",
+                "presenze_escursionisti_vodafone",
+            ]
+        ].rename(columns={"presenze": "presenze_vodafone"}),
         on=["DATA", "ID_COMUNE"],
         how="inner",
     )

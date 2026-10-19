@@ -15,11 +15,12 @@ project_name = os.getenv("PROJECT_NAME", "overtourism")
 def download_index_data(overwrite: bool = False) -> None:
     """Download the index data from the digitalhub platform."""
     dataitems = [
-        "phen_popolazione.parquet",
-        "phen_presenze.parquet",
-        "phen_strutture.parquet",
         "phen_consumption.parquet",
         "phen_flussi_od.parquet",
+        "phen_popolazione.parquet",
+        "phen_presenze.parquet",
+        "phen_provenienza.parquet",
+        "phen_strutture.parquet",
     ]
     artifacts = [
         "map_comuni_into_apt.json",

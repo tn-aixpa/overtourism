@@ -73,6 +73,9 @@ _REGISTRY: dict[str, Callable[[], Indicator]] = {
         STRUCTURES_SOURCE
     ),
     "turismo-sommerso": lambda: HiddenTourismIndicator(PRESENCES_SOURCE),
+    "carico-antropico": lambda: AnthropogenicLoadIndicator(
+        POPULATION_SOURCE, PRESENCES_SOURCE
+    ),
     "quota-mobilita-ingresso": lambda: InboundMobilityShareIndicator(FLOWS_OD_SOURCE),
     "quota-mobilita-uscita": lambda: OutboundMobilityShareIndicator(FLOWS_OD_SOURCE),
     "quota-intra-ambito": lambda: IntraAmbitoShareIndicator(FLOWS_OD_SOURCE),
@@ -287,6 +290,56 @@ class HiddenTourismIndicator(Indicator):
             .div(denominator.where(denominator != 0))
             .fillna(df["presenze_vodafone"])
         )
+
+
+class AnthropogenicLoadIndicator(Indicator):
+    """Calculates the anthropogenic load as the ratio between Vodafone
+    registered presences (tourists and excursionists) and resident population.
+    """
+
+    name = "Carico Antropico"
+    type = INDICATORS_TYPES[0]
+    description = (
+        "L'indice misura il rapporto fra le presenze complessive rilevate "
+        "attraverso i dati Vodafone, comprendenti turisti ed escursionisti, "
+        "e la popolazione residente."
+    )
+    index_value_unit_description = (
+        "Rapporto fra presenze Vodafone complessive e popolazione residente"
+    )
+
+    def __init__(self, population_source_file, presences_source_file):
+        super().__init__(
+            phenomena=[
+                PopulationPhenomenon(
+                    population_source_file,
+                ),
+                PresencesPhenomenon(
+                    presences_source_file,
+                    col="presenze_vodafone",
+                    name="presenze_vodafone",
+                ),
+                PresencesPhenomenon(
+                    presences_source_file,
+                    col="presenze_escursionisti_vodafone",
+                    name="presenze_escursionisti_vodafone",
+                ),
+            ],
+            combinator=self.compute_anthropogenic_load,
+        )
+
+    def compute_anthropogenic_load(
+        self,
+        df: pd.DataFrame,
+        **extra,
+    ) -> pd.Series:
+        total_presences = (
+            df["presenze_vodafone"] + df["presenze_escursionisti_vodafone"]
+        )
+
+        population = df["population"]
+
+        return total_presences.div(population.where(population != 0))
 
 
 # ---------------------------------------------------------------------------

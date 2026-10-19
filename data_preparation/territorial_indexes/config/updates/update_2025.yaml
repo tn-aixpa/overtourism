@@ -4,7 +4,7 @@
 # Every dataset below is restricted to the period of the update (`period.update_*` of settings.yaml, or the optional
 # `period: {start: ..., end: ...}` here, never before `period.start`): rows of other periods in the files are ignored.
 # Updated: presenze (vodafone + alb + extralb), popolazione, strutture and flussi OD. Consumption (ee/gas services + totals)
-# is DISABLED for now: phen_consumption needs the 4 energy datasets together (ee_prelievi, gas_prelievi, ee_totale, gas_totale). See ASSUMPTIONS.md (U1..U7) for the assumptions about the files of the update.
+# is DISABLED for now: phen_consumption needs the 4 energy datasets together (ee_prelievi, gas_prelievi, ee_totale, gas_totale). See METHODOLOGY.md (`phen_consumption`) for the assumptions about the energy files.
 
 datasets:
   popolazione:
@@ -95,7 +95,7 @@ datasets:
 
   vodafone_covisits:
     enabled: true
-    sources:                                  # OD co-visits: yearly flow indicators of 2025 (see ASSUMPTIONS.md U4)
+    sources:                                  # OD co-visits: yearly flow indicators of 2025 (see METHODOLOGY.md, `phen_flussi_od`)
       - file: vodafone_covisits.csv
         reader: covisits_csv                  # chunked, keeps only the rows of the update period
         adapter: vodafone_covisits_raw

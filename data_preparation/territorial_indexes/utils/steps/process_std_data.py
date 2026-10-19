@@ -96,13 +96,6 @@ def _filtering_strutture(df, window, year_col="DATA"):
     return clip(df, window, col=year_col, name="strutture")
 
 
-def _filtering_vodafone_attendences(df):
-    """Filtering presences on tourists and municipalities"""
-    return df[
-        (df["userProfile"] == "TOURIST") & (df["locType"] == "TN_MKT_AL_3")
-    ].copy()
-
-
 def process_popolazione(df, mapping_comuni, window=BASE_WINDOW):
     df = clip(df, window, name="popolazione")
     df["ID_COMUNE"] = df["LOCATION"].apply(
@@ -162,15 +155,22 @@ def process_vodafone(
     bed_col="tot_postiletto",
     check=True,
     window=BASE_WINDOW,
+    popolazione=None,
 ):
-    """vodafone presences: vodafone areas x day -> comune x day.
+    """Vodafone TOURIST and VISITOR presences: areas x day -> comune x day.
 
-    Areas that map to a single comune are unchanged. Areas that map to several comuni are split
-    linearly to the beds (`bed_col` of `strutture`, year of the day or nearest year) of their comuni.
-    Without `strutture` the split is uniform. With check=True the totals are summed back
-    (per area and day) and a mismatch raises ValueError.
+    TOURIST counts are split by beds and VISITOR (excursionist) counts by population.
+    Single-comune areas are unchanged. With check=True, both totals are checked after
+    allocation.
     """
-    df = _filtering_vodafone_attendences(df)  # only COMUNI & TURISTI
+    if popolazione is None:
+        raise ValueError(
+            "[process_vodafone] population data are required to allocate VISITOR presences"
+        )
+    df = df[
+        df["userProfile"].isin(["TOURIST", "VISITOR"])
+        & (df["locType"] == "TN_MKT_AL_3")
+    ].copy()
     df["ID_COMUNE"] = df["LOCATION"].map(mapping_vodafone)
     mask = df["LOCATION"] == "SAN GIOVANNI DI FASSA"
     df.loc[mask, "ID_COMUNE"] = pd.Series(
@@ -197,29 +197,125 @@ def process_vodafone(
         normalize_id_comune
     )  # hashable
 
-    # Sum per (day, vodafone area), then split each area over its comuni
-    df = df.groupby(["DATA", "ID_COMUNE"], as_index=False)[VODAFONE_VALUE_COLS].sum()
-    integer = is_whole(df, VODAFONE_VALUE_COLS)
+    # Split the raw value by profile. The visitor column must be derived from the ORIGINAL value, before
+    # `presenze` is restricted to TOURIST (doing it the other way round zeroes every visitor row).
+    raw_value = df["presenze"]
+    df["presenze_escursionisti_vodafone"] = raw_value.where(
+        df["userProfile"] == "VISITOR", 0
+    )
+    df["presenze"] = raw_value.where(df["userProfile"] == "TOURIST", 0)
+    # Totals of the raw input (mapped areas only, as the groupby below drops the others): the grouped data must
+    # keep them. Comparing with the already-derived columns alone cannot catch a profile lost before this point.
+    mapped = df["ID_COMUNE"].notna()
+    expected = {
+        "presenze": raw_value[mapped & (df["userProfile"] == "TOURIST")].sum(),
+        "presenze_escursionisti_vodafone": raw_value[
+            mapped & (df["userProfile"] == "VISITOR")
+        ].sum(),
+    }
+    df = df.groupby(["DATA", "ID_COMUNE"], as_index=False)[
+        VODAFONE_VALUE_COLS
+    ].sum()
+    for col, total in expected.items():
+        if not np.isclose(df[col].sum(), total):
+            raise ValueError(
+                f"[process_vodafone] {col}: {df[col].sum()} after grouping, {total} in the input profile rows"
+            )
+    if expected["presenze_escursionisti_vodafone"] > 0:
+        logger.info(
+            "[process_vodafone] VISITOR presences in input: %s", expected["presenze_escursionisti_vodafone"]
+        )
     df["_TID"] = np.arange(len(df))
 
-    kwargs = {}
+    shared_visitor_areas = df.loc[
+        df["presenze_escursionisti_vodafone"].ne(0)
+        & df["ID_COMUNE"].map(lambda ids: isinstance(ids, tuple) and len(ids) > 1),
+        ["DATA", "ID_COMUNE"],
+    ].explode("ID_COMUNE")
+    if not shared_visitor_areas.empty:
+        population_weights = popolazione[["DATA", "ID_COMUNE", "popolazione"]].copy()
+        shared_visitor_areas["_YEAR"] = pd.to_datetime(
+            shared_visitor_areas["DATA"].astype(str), errors="raise"
+        ).dt.year
+        population_weights["_YEAR"] = pd.to_datetime(
+            population_weights["DATA"].astype(str), errors="raise"
+        ).dt.year
+        shared_visitor_areas["ID_COMUNE"] = (
+            shared_visitor_areas["ID_COMUNE"].astype(str).str.zfill(6)
+        )
+        population_weights["ID_COMUNE"] = (
+            population_weights["ID_COMUNE"].astype(str).str.zfill(6)
+        )
+        population_weights["popolazione"] = pd.to_numeric(
+            population_weights["popolazione"], errors="coerce"
+        )
+        joined = shared_visitor_areas.merge(
+            population_weights[["_YEAR", "ID_COMUNE", "popolazione"]],
+            on=["_YEAR", "ID_COMUNE"],
+            how="left",
+        )
+        invalid = joined["popolazione"].isna() | joined["popolazione"].le(0)
+        if invalid.any():
+            missing = joined.loc[invalid, ["_YEAR", "ID_COMUNE"]].drop_duplicates()
+            raise ValueError(
+                "[process_vodafone] missing positive population for multi-comune "
+                f"VISITOR allocation: {missing.to_dict('records')}"
+            )
+
+    tourist_kwargs = {}
     if strutture is not None:
         years = pd.to_datetime(df["DATA"]).dt.year.unique()
-        kwargs = dict(
+        tourist_kwargs = dict(
             space_weights=beds_weights(strutture, years, bed_col),
             space_weight_col=bed_col,
             space_time_freq="Y",  # beds are yearly
         )
     else:
-        logger.warning("[process_vodafone] no strutture given: uniform split")
+        logger.warning("[process_vodafone] no strutture given: uniform TOURIST split")
 
-    out = disaggregate(
-        df, cols=VODAFONE_VALUE_COLS, axis="space", integer=integer, **kwargs
+    tourist = disaggregate(
+        df,
+        cols=["presenze"],
+        axis="space",
+        integer=is_whole(df, ["presenze"]),
+        **tourist_kwargs,
     )
+    visitors = disaggregate(
+        df,
+        cols=["presenze_escursionisti_vodafone"],
+        axis="space",
+        space_weights=popolazione,
+        space_weight_col="popolazione",
+        space_time_freq="Y",
+        integer=is_whole(df, ["presenze_escursionisti_vodafone"]),
+    )
+    keys = ["DATA", "ID_COMUNE"]
+    out = tourist[keys + ["presenze"]].merge(
+        visitors[keys + ["presenze_escursionisti_vodafone"]],
+        on=keys,
+        how="outer",
+    )
+
     if check:
-        assert_sums_match(df, out, VODAFONE_VALUE_COLS, ["_TID"], name="vodafone")
-        assert_sums_match(df, out, VODAFONE_VALUE_COLS, ["DATA"], name="vodafone/day")
-    return standard_ordering_cols(out.drop(columns="_TID").reset_index(drop=True))
+        assert_sums_match(
+            df, tourist, ["presenze"], ["_TID"], name="vodafone TOURIST"
+        )
+        assert_sums_match(
+            df,
+            visitors,
+            ["presenze_escursionisti_vodafone"],
+            ["_TID"],
+            name="vodafone VISITOR",
+        )
+        assert_sums_match(df, tourist, ["presenze"], ["DATA"], name="vodafone TOURIST/day")
+        assert_sums_match(
+            df,
+            visitors,
+            ["presenze_escursionisti_vodafone"],
+            ["DATA"],
+            name="vodafone VISITOR/day",
+        )
+    return standard_ordering_cols(out.reset_index(drop=True))
 
 
 def process_provenienza(df, area_comune, window=BASE_WINDOW):
@@ -306,7 +402,17 @@ def process_covisits(df, area_comune, window=BASE_WINDOW):
             year,
             days,
         )
-    return standard_ordering_cols(out[["DATA", "ID_COMUNE"] + COVISITS_VALUE_COLS])
+    out = out[["DATA", "ID_COMUNE"] + COVISITS_VALUE_COLS]
+    # Nulls are expected (see METHODOLOGY.md, "phen_flussi_od"): report them so they can be checked per column.
+    nulls = out.drop(columns=["DATA", "ID_COMUNE"]).isna().mean()
+    nulls = nulls[nulls > 0]
+    if not nulls.empty:
+        logger.info(
+            "[process_covisits] share of empty values (%d comune-years): %s",
+            len(out),
+            {col: f"{share:.0%}" for col, share in nulls.items()},
+        )
+    return standard_ordering_cols(out)
 
 
 def process_beds(strutture_std, mapping_comuni, window=BASE_WINDOW):
@@ -585,8 +691,13 @@ def process_data(
     # alb / extralb (ISPAT arrivals + presences, read from raw_data) are distributed taking the average
     # stay into account, and split among comuni by `alberghieri` / `extra alb.` beds.
     strutture_pr = process_strutture(std["strutture"], mapping_comuni, window)
+    popolazione_pr = process_popolazione(std["popolazione"], mapping_comuni, window)
     vodafone_pr = process_vodafone(
-        std["vodafone"], mapping_vodafone, strutture_pr, window=window
+        std["vodafone"],
+        mapping_vodafone,
+        strutture_pr,
+        popolazione=popolazione_pr,
+        window=window,
     )
     beds = process_beds(
         read_strutture_std(normalized_dir, type_format), mapping_comuni, window
@@ -636,9 +747,7 @@ def process_data(
     covisits_pr = process_covisits(std["vodafone_covisits"], area_comune, window)
     provenienza_pr = process_provenienza(std["vodafone"], area_comune, window)
     dict_processed = {
-        "popolazione_pr": process_popolazione(
-            std["popolazione"], mapping_comuni, window
-        ),
+        "popolazione_pr": popolazione_pr,
         "strutture_pr": strutture_pr,
         "vodafone_pr": vodafone_pr,
         "presenze_alb_pr": alb_pr,

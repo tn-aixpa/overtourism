@@ -253,6 +253,20 @@ def process_update_std_data(
                 if dataset == "vodafone"
                 else None
             )
+            if dataset == "vodafone":
+                popolazione = _processed_reference(
+                    "popolazione", done, out_dir, type_format
+                )
+                frames.append(
+                    process_vodafone(
+                        std,
+                        maps["mapping_vodafone"],
+                        strutture,
+                        popolazione=popolazione,
+                        window=window,
+                    )
+                )
+                continue
             processor = DATASET_PROCESSORS.get(dataset) or PROCESSORS[part.kind]
             frames.append(processor(std, maps, strutture, window, part.dataset))
         if frames:

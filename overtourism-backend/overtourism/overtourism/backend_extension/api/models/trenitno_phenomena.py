@@ -37,7 +37,8 @@ PHENOMENON_LABELS_IT: dict[str, str] = {
     "letti_alb": "posti letto alberghieri",
     "letti_exalb": "posti letto extra-alberghieri",
     # HiddenTourismIndicator ("indice-turismo-sommerso")
-    "presenze_vodafone": "presenze rete mobile",
+    "presenze_vodafone": "presenze turisti rete mobile",
+    "presenze_escursionisti_vodafone": "presenze escrusionisti rete mobile",
     "presenze_alb": "presenze alb.",
     "presenze_xalb": "presenze extra-alb.",
     # FlowPhenomenon-based indicators (RatioFlowsIndicator, FlowsIndicatorLevel;

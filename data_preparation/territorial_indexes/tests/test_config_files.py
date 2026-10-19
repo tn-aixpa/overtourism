@@ -1,5 +1,5 @@
 from utils.config import load_settings
-from utils.datasets import DATASETS, PHENOMENA
+from utils.datasets import DATASETS, PHENOMENA, VODAFONE_VALUE_COLS
 
 
 def test_dataset_and_phenomenon_names_are_in_yaml():
@@ -22,3 +22,7 @@ def test_dataset_and_phenomenon_names_are_in_yaml():
             "presenze_extralb",
         }
     )
+    assert VODAFONE_VALUE_COLS == [
+        "presenze",
+        "presenze_escursionisti_vodafone",
+    ]

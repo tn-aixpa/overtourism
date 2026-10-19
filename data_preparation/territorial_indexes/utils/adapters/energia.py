@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Adapter for the energy sources (electricity and gas withdrawals), yearly update.
 
-ASSUMPTION (E1, see ASSUMPTIONS.md): the files of the update have the same layout as the category files of the
+ASSUMPTION (see METHODOLOGY.md, `phen_consumption`): the files of the update have the same layout as the category files of the
 base build (`Energia/<ee_prelievi|gas_prelievi>/<49_3|55_1|56_1|93_1|96>.csv`: semicolon-delimited, one row per
 year x comune x usage category, one column per month). They are read with the reader `energy_csv`, which already
 returns the standard layout (DATA = year, LOCATION, codice_utilizzo, gennaio..dicembre); the adapter checks it.
